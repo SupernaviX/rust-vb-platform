@@ -1,0 +1,3 @@
+[workspace]
+members = ["vb-rt"]
+resolver = "3"
