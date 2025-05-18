@@ -15,8 +15,8 @@ const BKCOL: *mut u16 = 0x0005f870 as _;
 
 fn main() {
     unsafe {
-        DPCTRL.write_volatile(0x0182);
-        XPCTRL.write_volatile(0x0001);
+        DPCTRL.write_volatile(0x0302);
+        XPCTRL.write_volatile(0x0002);
         BRTA.write_volatile(32);
         BRTB.write_volatile(64);
         BRTC.write_volatile(32);
