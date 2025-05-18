@@ -1,0 +1,18 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "hello-world"
+version = "0.1.0"
+edition = "2024"
+forced-target = "v810-unknown-vb"
+
+[[bin]]
+name = "hello-world"
+test = false
+bench = false
+
+[dependencies]
+vb-rt = { path = "../../packages/vb-rt" }
+
+[build-dependencies]
+vb-rt-build = { path = "../../packages/vb-rt-build" }

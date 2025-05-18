@@ -1,3 +1,9 @@
+cargo-features = ["per-package-target"]
+
 [workspace]
-members = ["vb-rt"]
+members = [
+    "packages/vb-rt",
+    "packages/vb-rt-build",
+    "examples/hello-world",
+]
 resolver = "3"

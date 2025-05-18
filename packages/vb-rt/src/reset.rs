@@ -45,7 +45,7 @@ const LEFT_CTA: usize = 0x0003dc00;
 #[unsafe(naked)]
 pub unsafe extern "C" fn reset() {
     unsafe extern "Rust" {
-        fn main();
+        unsafe fn _vb_rt_main();
     }
 
     naked_asm!("
@@ -57,25 +57,25 @@ pub unsafe extern "C" fn reset() {
         movea   lo(_data_start), r6, r6
 
     /* initialize data */
-        jr  2f
-    1:
+        jr  3f
+    2:
         ld.b    0[r4], r7
         st.b    r7, 0[r6]
         add 1,r4
         add 1,r6
-    2:
+    3:
         cmp r5,r6
-        blt 1b
+        blt 2b
     
     /* zero out the rest of RAM */
         movhi   0x0501, r0, r4
-        jr  4f
-    3:
+        jr  5f
+    4:
         st.b    r0, 0[r5]
         add 1, r5
-    4:
+    5:
         cmp r4, r5
-        blt 3b
+        blt 4b
 
     /* initialize the stack */
         movhi   hi(__gp), r0, sp
@@ -88,17 +88,6 @@ pub unsafe extern "C" fn reset() {
         movhi   hi({LEFT_CTA}), r0, r7
         movea   lo({LEFT_CTA}), r7, r7
         movea   0x0100, r0, r8
-    5:
-        ld.h    0[r6], r9
-        st.h    r9, 0[r7]
-        add 2, r6
-        add 2, r7
-        add -1, r8
-        bnz 5b
-    
-    /* init right column table */
-        movhi   hi({COLUMN_TABLE_CONTENTS}), r0, r6
-        movea   lo({COLUMN_TABLE_CONTENTS}), r6, r6
     6:
         ld.h    0[r6], r9
         st.h    r9, 0[r7]
@@ -106,13 +95,25 @@ pub unsafe extern "C" fn reset() {
         add 2, r7
         add -1, r8
         bnz 6b
+    
+    /* init right column table */
+        movhi   hi({COLUMN_TABLE_CONTENTS}), r0, r6
+        movea   lo({COLUMN_TABLE_CONTENTS}), r6, r6
+        movea   0x0100, r0, r8
+    7:
+        ld.h    0[r6], r9
+        st.h    r9, 0[r7]
+        add 2, r6
+        add 2, r7
+        add -1, r8
+        bnz 7b
 
     /* we're done, load up main */
         movhi   hi({main}), r0, r1
         movea   lo({main}), r1, r1
         jmp [r1]
     ",
-    main = sym main,
+    main = sym _vb_rt_main,
     COLUMN_TABLE_CONTENTS = sym COLUMN_TABLE_CONTENTS,
     LEFT_CTA = const LEFT_CTA)
 }

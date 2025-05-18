@@ -3,5 +3,17 @@
 version = 4
 
 [[package]]
+name = "hello-world"
+version = "0.1.0"
+dependencies = [
+ "vb-rt",
+ "vb-rt-build",
+]
+
+[[package]]
 name = "vb-rt"
+version = "0.1.0"
+
+[[package]]
+name = "vb-rt-build"
 version = "0.1.0"

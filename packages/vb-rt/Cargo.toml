@@ -1,7 +1,10 @@
+cargo-features = ["per-package-target"]
+
 [package]
 name = "vb-rt"
 version = "0.1.0"
 edition = "2024"
+forced-target = "v810-unknown-vb"
 
 [lib]
 test = false
