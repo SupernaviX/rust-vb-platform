@@ -4,20 +4,20 @@ MEMORY
   ROM (rx): ORIGIN = 0x07000000, LENGTH = 16M
 }
 
-ENTRY(__handle_reset);
+ENTRY(__handle__vb_rt_reset);
 
-PROVIDE(vb_game_pad_handler = default_handler);
-PROVIDE(vb_timer_handler = default_handler);
-PROVIDE(vb_game_pak_handler = default_handler);
-PROVIDE(vb_communication_handler = default_handler);
-PROVIDE(vb_vip_handler = default_handler);
-PROVIDE(vb_fp_exception_handler = default_handler);
-PROVIDE(vb_divide_by_zero_handler = default_handler);
-PROVIDE(vb_illegal_opcode_handler = default_handler);
-PROVIDE(vb_lo_trap_handler = default_handler);
-PROVIDE(vb_hi_trap_handler = default_handler);
-PROVIDE(vb_address_trap_handler = default_handler);
-PROVIDE(vb_duplexed_exception_handler = default_handler);
+PROVIDE(_vb_rt_game_pad_handler = default_handler);
+PROVIDE(_vb_rt_timer_handler = default_handler);
+PROVIDE(_vb_rt_game_pak_handler = default_handler);
+PROVIDE(_vb_rt_communication_handler = default_handler);
+PROVIDE(_vb_rt_vip_handler = default_handler);
+PROVIDE(_vb_rt_fp_exception_handler = default_handler);
+PROVIDE(_vb_rt_divide_by_zero_handler = default_handler);
+PROVIDE(_vb_rt_illegal_opcode_handler = default_handler);
+PROVIDE(_vb_rt_lo_trap_handler = default_handler);
+PROVIDE(_vb_rt_hi_trap_handler = default_handler);
+PROVIDE(_vb_rt_address_trap_handler = default_handler);
+PROVIDE(_vb_rt_duplexed_exception_handler = default_handler);
 
 SECTIONS
 {
@@ -62,21 +62,21 @@ SECTIONS
   } >ROM
 
   .handlers 0x07FFFE00 : AT(__rom_header_start + 0x20) {
-    KEEP (*(.handlers.vb_game_pad_handler))
-    KEEP (*(.handlers.vb_timer_handler))
-    KEEP (*(.handlers.vb_game_pak_handler))
-    KEEP (*(.handlers.vb_communication_handler))
-    KEEP (*(.handlers.vb_vip_handler))
+    KEEP (*(.handlers._vb_rt_game_pad_handler))
+    KEEP (*(.handlers._vb_rt_timer_handler))
+    KEEP (*(.handlers._vb_rt_game_pak_handler))
+    KEEP (*(.handlers._vb_rt_communication_handler))
+    KEEP (*(.handlers._vb_rt_vip_handler))
     . = . + 0x110;
-    KEEP (*(.handlers.vb_fp_exception_handler))
+    KEEP (*(.handlers._vb_rt_fp_exception_handler))
     . = . + 0x10;
-    KEEP (*(.handlers.vb_divide_by_zero_handler))
-    KEEP (*(.handlers.vb_illegal_opcode_handler))
-    KEEP (*(.handlers.vb_lo_trap_handler))
-    KEEP (*(.handlers.vb_hi_trap_handler))
-    KEEP (*(.handlers.vb_address_trap_handler))
-    KEEP (*(.handlers.vb_duplexed_exception_handler))
+    KEEP (*(.handlers._vb_rt_divide_by_zero_handler))
+    KEEP (*(.handlers._vb_rt_illegal_opcode_handler))
+    KEEP (*(.handlers._vb_rt_lo_trap_handler))
+    KEEP (*(.handlers._vb_rt_hi_trap_handler))
+    KEEP (*(.handlers._vb_rt_address_trap_handler))
+    KEEP (*(.handlers._vb_rt_duplexed_exception_handler))
     . = . + 0x10;
-    KEEP (*(.handlers.reset))
+    KEEP (*(.handlers._vb_rt_reset))
   } >ROM =0x008a008a /* fill unset interrupts with "loop forever" */
 }

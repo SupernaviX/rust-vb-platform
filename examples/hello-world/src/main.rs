@@ -4,7 +4,7 @@
 use vb_rt::sys::halt;
 
 vb_rt::rom_header!("Hello World!", "SG", "HIYA");
-vb_rt::main!(main);
+vb_rt::main!({ main() });
 
 const DPCTRL: *mut u16 = 0x0005f822 as _;
 const XPCTRL: *mut u16 = 0x0005f842 as _;

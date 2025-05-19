@@ -43,7 +43,7 @@ const LEFT_CTA: usize = 0x0003dc00;
 
 #[unsafe(no_mangle)]
 #[unsafe(naked)]
-pub unsafe extern "C" fn reset() {
+pub unsafe extern "C" fn _vb_rt_reset() {
     unsafe extern "Rust" {
         unsafe fn _vb_rt_main();
     }
@@ -117,5 +117,3 @@ pub unsafe extern "C" fn reset() {
     COLUMN_TABLE_CONTENTS = sym COLUMN_TABLE_CONTENTS,
     LEFT_CTA = const LEFT_CTA)
 }
-
-crate::register_handler!(reset);
