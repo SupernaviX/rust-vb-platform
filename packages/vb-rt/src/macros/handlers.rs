@@ -34,9 +34,9 @@ macro_rules! interrupt_handler {
                 pub fn $handler() {
                     $body
                 }
-            }
+            };
         }
-    }
+    };
 }
 
 #[interrupt]
@@ -46,13 +46,25 @@ pub fn default_handler() {}
 interrupt_handler!(_vb_rt_game_pad_handler, game_pad_interrupt_handler);
 interrupt_handler!(_vb_rt_timer_handler, timer_interrupt_handler);
 interrupt_handler!(_vb_rt_game_pak_handler, game_pak_interrupt_handler);
-interrupt_handler!(_vb_rt_communication_handler, communication_interrupt_handler);
+interrupt_handler!(
+    _vb_rt_communication_handler,
+    communication_interrupt_handler
+);
 interrupt_handler!(_vb_rt_vip_handler, vip_interrupt_handler);
 interrupt_handler!(_vb_rt_fp_exception_handler, fp_exception_handler);
-interrupt_handler!(_vb_rt_divide_by_zero_handler, divide_by_zero_exception_handler);
-interrupt_handler!(_vb_rt_illegal_opcode_handler, illegal_opcode_exception_handler);
+interrupt_handler!(
+    _vb_rt_divide_by_zero_handler,
+    divide_by_zero_exception_handler
+);
+interrupt_handler!(
+    _vb_rt_illegal_opcode_handler,
+    illegal_opcode_exception_handler
+);
 interrupt_handler!(_vb_rt_lo_trap_handler, lo_trap_handler);
 interrupt_handler!(_vb_rt_hi_trap_handler, hi_trap_handler);
 interrupt_handler!(_vb_rt_address_trap_handler, address_trap_handler);
-interrupt_handler!(_vb_rt_duplexed_exception_handler, duplexed_exception_handler);
+interrupt_handler!(
+    _vb_rt_duplexed_exception_handler,
+    duplexed_exception_handler
+);
 handler!(_vb_rt_reset);

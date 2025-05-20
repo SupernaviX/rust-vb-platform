@@ -11,3 +11,4 @@ test = false
 bench = false
 
 [dependencies]
+bitfield-struct = "0.11"

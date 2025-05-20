@@ -1,5 +1,10 @@
 use core::arch::asm;
 
+pub mod vip;
+mod volatile;
+
+pub use volatile::VolatilePointer;
+
 /// Enable interrupts
 #[inline(always)]
 pub fn cli() {
