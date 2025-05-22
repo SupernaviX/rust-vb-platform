@@ -12,6 +12,7 @@ test = false
 bench = false
 
 [dependencies]
+vb-graphics = { path = "../../packages/vb-graphics" }
 vb-rt = { path = "../../packages/vb-rt" }
 
 [build-dependencies]

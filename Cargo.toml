@@ -2,6 +2,7 @@ cargo-features = ["per-package-target"]
 
 [workspace]
 members = [
+    "packages/vb-graphics",
     "packages/vb-rt",
     "packages/vb-rt-build",
     "examples/hello-world",
