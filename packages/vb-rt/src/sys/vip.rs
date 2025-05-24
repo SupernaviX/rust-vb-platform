@@ -111,6 +111,10 @@ pub struct World {
 }
 
 field_accessor!(World, header, WorldHeader);
+field_accessor!(World, gx, i16);
+field_accessor!(World, gy, i16);
+field_accessor!(World, mx, i16);
+field_accessor!(World, my, i16);
 field_accessor!(World, w, i16);
 field_accessor!(World, h, i16);
 
