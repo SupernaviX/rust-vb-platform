@@ -12,6 +12,7 @@ test = false
 bench = false
 
 [dependencies]
+fixed = "1.29"
 vb-graphics = { path = "../../packages/vb-graphics" }
 vb-rt = { path = "../../packages/vb-rt" }
 

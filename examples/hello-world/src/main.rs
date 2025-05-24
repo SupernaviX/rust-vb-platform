@@ -1,6 +1,7 @@
 #![no_main]
 #![no_std]
 
+use fixed::types::I10F6;
 use vb_graphics::{self as gfx, Image};
 use vb_rt::sys::{hardware, vip};
 
@@ -83,8 +84,8 @@ fn main() {
 
     FRAME.enable_interrupts();
 
-    let mut smile_x = 184;
-    let mut smile_y = 104;
+    let mut smile_x = I10F6::from_num(184);
+    let mut smile_y = I10F6::from_num(104);
 
     loop {
         let world = vip::WORLDS.index(31);
@@ -106,8 +107,8 @@ fn main() {
                 .with_bgm(vip::WorldMode::Normal)
                 .with_bg_map_base(0),
         );
-        world.gx().write(smile_x);
-        world.gy().write(smile_y);
+        world.gx().write(smile_x.to_num());
+        world.gy().write(smile_y.to_num());
         world.mx().write(384);
         world.my().write(0);
         world.w().write(15);
@@ -117,18 +118,26 @@ fn main() {
         world.header().write(vip::WorldHeader::new().with_end(true));
 
         let buttons = hardware::read_controller();
+        let mut xspeed = I10F6::ZERO;
+        let mut yspeed = I10F6::ZERO;
         if buttons.ll() {
-            smile_x = 0.max(smile_x - 2);
+            xspeed -= I10F6::from_num(2);
         }
         if buttons.lr() {
-            smile_x = 368.min(smile_x + 2);
+            xspeed += I10F6::from_num(2);
         }
         if buttons.lu() {
-            smile_y = 0.max(smile_y - 2);
+            yspeed -= I10F6::from_num(2);
         }
         if buttons.ld() {
-            smile_y = 208.min(smile_y + 2);
+            yspeed += I10F6::from_num(2);
         }
+        if xspeed != 0 && yspeed != 0 {
+            xspeed *= I10F6::SQRT_2 / 2;
+            yspeed *= I10F6::SQRT_2 / 2;
+        }
+        smile_x = (smile_x + xspeed).clamp(I10F6::ZERO, I10F6::from_num(368));
+        smile_y = (smile_y + yspeed).clamp(I10F6::ZERO, I10F6::from_num(208));
 
         FRAME.wait_for_new_frame();
     }
