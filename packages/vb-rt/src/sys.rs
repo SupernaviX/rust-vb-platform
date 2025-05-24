@@ -1,5 +1,6 @@
 use core::arch::asm;
 
+pub mod hardware;
 pub mod vip;
 mod volatile;
 

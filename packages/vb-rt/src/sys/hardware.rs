@@ -1,0 +1,125 @@
+use bitfield_struct::bitfield;
+
+use super::volatile::mmio;
+
+/// The lower 8 bits of serial (controller) data
+#[bitfield(u8)]
+pub struct SerialDataLow {
+    /// Low battery
+    pub pwr: bool,
+    /// Signature (always set)
+    pub sgn: bool,
+    /// A button
+    pub a: bool,
+    /// B button
+    pub b: bool,
+    /// Right trigger
+    pub rt: bool,
+    /// Left trigger
+    pub lt: bool,
+    /// Right D-pad up
+    pub ru: bool,
+    /// Right D-pad right
+    pub rr: bool,
+}
+
+/// The higher 8 bits of serial (controller) data
+#[bitfield(u8)]
+pub struct SerialDataHigh {
+    /// Left D-pad right
+    pub lr: bool,
+    /// Left D-pad left
+    pub ll: bool,
+    /// Left D-pad down
+    pub ld: bool,
+    /// Left D-pad up
+    pub lu: bool,
+    /// Start button
+    pub sta: bool,
+    /// Select button
+    pub sel: bool,
+    /// Right D-pad left
+    pub rl: bool,
+    /// Right D-pad down
+    pub rd: bool,
+}
+
+mmio! {
+    pub const SDLR: SerialDataLow = 0x02000010;
+    pub const SDHR: SerialDataHigh = 0x02000014;
+}
+
+#[bitfield(u8)]
+pub struct SerialControlData {
+    /// When set, aborts hardware reads
+    pub s_abt_dis: bool,
+    /// Set while a hardware read is in progress
+    pub si_stat: bool,
+    /// Set to initiate a hardware read
+    pub hw_si: bool,
+    _padding0: bool,
+    /// Sends the inverse read bit to the game pad
+    pub soft_ck: bool,
+    /// When set, reset a software read
+    pub para_si: bool,
+    _padding1: bool,
+    /// Enables the key input interrupt
+    pub k_int_inh: bool,
+}
+mmio! {
+    pub const SCR: SerialControlData = 0x02000028;
+}
+
+// utility for reading controller data
+pub fn read_controller() -> GamePadData {
+    SCR.write(SerialControlData::new().with_para_si(true));
+    for _ in 0..16 {
+        // dummy operation to slow things down
+        unsafe {
+            core::arch::asm!("mpyhw r0, r0", "mpyhw r0, r0");
+        };
+        // send a 0 to the controller
+        SCR.write(SerialControlData::new().with_soft_ck(true));
+        // send a 1 to the controller
+        SCR.write(SerialControlData::new().with_soft_ck(false));
+    }
+    let lo: u8 = SDLR.read().into();
+    let hi: u8 = SDHR.read().into();
+    GamePadData::from((lo as u16) | ((hi as u16) << 8))
+}
+
+#[bitfield(u16)]
+pub struct GamePadData {
+    /// Low battery
+    pub pwr: bool,
+    /// Signature (always set)
+    pub sgn: bool,
+    /// A button
+    pub a: bool,
+    /// B button
+    pub b: bool,
+    /// Right trigger
+    pub rt: bool,
+    /// Left trigger
+    pub lt: bool,
+    /// Right D-pad up
+    pub ru: bool,
+    /// Right D-pad right
+    pub rr: bool,
+    /// Left D-pad right
+    pub lr: bool,
+    /// Left D-pad left
+    pub ll: bool,
+    /// Left D-pad down
+    pub ld: bool,
+    /// Left D-pad up
+    pub lu: bool,
+    /// Start button
+    pub sta: bool,
+    /// Select button
+    pub sel: bool,
+    /// Right D-pad left
+    pub rl: bool,
+    /// Right D-pad down
+    pub rd: bool,
+}
