@@ -13,6 +13,17 @@ impl<T: Copy> VolatilePointer<T> {
         Self(address as *mut T)
     }
 
+    /// Construct a new volatile pointer to a field of the data at this address.
+    ///
+    /// # Safety
+    ///
+    /// The given offset must point to a field of the given type.
+    pub const unsafe fn field<U: Copy>(self, offset: usize) -> VolatilePointer<U> {
+        assert!(offset < size_of::<T>());
+        let inner = unsafe { self.0.cast::<u8>().add(offset) }.cast::<U>();
+        VolatilePointer(inner)
+    }
+
     pub fn read(self) -> T {
         // SAFETY: constructor guarantees that address is valid and aligned
         unsafe { self.0.read_volatile() }
@@ -31,6 +42,11 @@ impl<T: Copy, const N: usize> VolatilePointer<[T; N]> {
             unsafe { self.0.cast::<T>().add(offset).write_volatile(*src) };
         }
     }
+
+    pub const fn index(self, index: usize) -> VolatilePointer<T> {
+        assert!(index < N);
+        unsafe { VolatilePointer(self.0.cast::<T>().add(index)) }
+    }
 }
 
 macro_rules! mmio {
@@ -41,3 +57,23 @@ macro_rules! mmio {
     };
 }
 pub(crate) use mmio;
+
+macro_rules! field_accessor {
+    ($typ:ty, $field:ident, $ft:ty) => {
+        impl VolatilePointer<$typ> {
+            pub const fn $field(self) -> VolatilePointer<$ft> {
+                // assert that the field is the right type
+                const _: () = {
+                    fn dummy(v: $typ) {
+                        let _: $ft = v.$field;
+                    }
+                };
+
+                let offset = core::mem::offset_of!($typ, $field);
+                // SAFETY: this is definitely the offset of a field which exists on this type.
+                unsafe { self.field(offset) }
+            }
+        }
+    };
+}
+pub(crate) use field_accessor;

@@ -1,6 +1,122 @@
 use bitfield_struct::bitfield;
 
-use super::volatile::mmio;
+use super::{
+    VolatilePointer,
+    volatile::{field_accessor, mmio},
+};
+
+#[repr(C, align(4))]
+#[derive(Clone, Copy)]
+pub struct Character(pub [u16; 8]);
+
+mmio! {
+    pub const CHARACTERS: [Character; 2048] = 0x00078000;
+}
+
+#[bitfield(u16)]
+pub struct BGCell {
+    /// The index of the character to draw.
+    #[bits(11)]
+    pub character: u16,
+    _pad: bool,
+    /// If set, the character graphic will be reversed vertically.
+    pub bvflp: bool,
+    /// If set, the character graphic will be reversed horizontally.
+    pub bhflp: bool,
+    /// Specifies the palette index to use for this cell.
+    #[bits(2)]
+    pub gplts: u8,
+}
+
+mmio! {
+    pub const BG_CELLS: [BGCell; 64 * 64 * 16] = 0x00020000;
+    pub const BG_MAPS: [[BGCell; 64 * 64]; 16] = 0x00020000;
+}
+
+/// Describes the contents of a world.
+#[derive(Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum WorldMode {
+    Normal = 0,
+    HBias = 1,
+    Affine = 2,
+    Object = 3,
+}
+impl WorldMode {
+    const fn into_bits(self) -> u8 {
+        self as _
+    }
+    const fn from_bits(value: u8) -> Self {
+        match value {
+            0 => Self::Normal,
+            1 => Self::HBias,
+            2 => Self::Affine,
+            _ => Self::Object,
+        }
+    }
+}
+
+#[bitfield(u16)]
+pub struct WorldHeader {
+    /// The index of the first background map in the world's background.
+    #[bits(4)]
+    pub bg_map_base: u8,
+    #[bits(2)]
+    _pad: u8,
+    /// If set, this world and all worlds of lesser index will not be drawn to the frame buffer.
+    pub end: bool,
+    /// If clear, the world's background will repeat indefinitely. If set, characters beyond the background's bounds will use the character specified by Overplane Character.
+    pub over: bool,
+    /// Raise 2 to this power for the height of the world's background in background maps.
+    #[bits(2)]
+    pub scy: u8,
+    /// Raise 2 to this power for the width of the world's background in background maps.
+    #[bits(2)]
+    pub scx: u8,
+    /// Indicates the world's contents.
+    #[bits(2)]
+    pub bgm: WorldMode,
+    /// If set, the world will be drawn to the right image.
+    pub ron: bool,
+    /// If set, the world will be drawn to the left image.
+    pub lon: bool,
+}
+
+#[repr(C, align(4))]
+#[derive(Clone, Copy)]
+pub struct World {
+    /// Describes the world.
+    pub header: WorldHeader,
+    /// The signed horizontal coordinate of the left edge of the world from the left edge of the image.
+    pub gx: i16,
+    /// The signed parallax offset applied to the world's horizontal coordinate.
+    pub gp: i16,
+    /// The signed vertical coordinate of the top edge of the world from the top edge of the image.
+    pub gy: i16,
+    /// The signed horizontal source coordinate of the pixel within the world's background, relative to the top-left corner of the background, to be displayed in the top-left corner of the world.
+    pub mx: i16,
+    /// The signed parallax offset applied to the background's horizontal source coordinate.
+    pub mp: i16,
+    /// The signed vertical source coordinate of the pixel within the world's background, relative to the top-left corner of the background, to be displayed in the top-left corner of the world.
+    pub my: i16,
+    /// Add 1 to this figure to yield the width in pixels of the world. This field's format depends on BGM.
+    pub w: i16,
+    /// Add 1 to this figure to yield the height in pixels of the world.
+    pub h: i16,
+    /// Specifies the location in world parameter memory where this world's parameters can be found.
+    pub param_base: u16,
+    /// When OVER is set, characters beyond the background's bounds will use the cell in background map memory at the index given by this field.
+    pub overplane_character: u16,
+    _pad: [u16; 5],
+}
+
+field_accessor!(World, header, WorldHeader);
+field_accessor!(World, w, i16);
+field_accessor!(World, h, i16);
+
+mmio! {
+    pub const WORLDS: [World; 32] = 0x0003d800;
+}
 
 #[bitfield(u16)]
 pub struct InterruptFlags {
@@ -95,14 +211,30 @@ pub struct DrawingFlags {
 mmio! {
     pub const XPSTTS: DrawingFlags = 0x0005f840;
     pub const XPCTRL: DrawingFlags = 0x0005f842;
-
-    pub const BKCOL: u16 = 0x0005f870;
 }
 
-#[repr(C, align(4))]
-#[derive(Clone, Copy)]
-pub struct Character(pub [u16; 8]);
+#[bitfield(u16)]
+pub struct Palette {
+    #[bits(2)]
+    _pad1: u8,
+    /// The frame buffer pixel value for character pixel value 1.
+    #[bits(2)]
+    pub c1: u8,
+    /// The frame buffer pixel value for character pixel value 2.
+    #[bits(2)]
+    pub c2: u8,
+    /// The frame buffer pixel value for character pixel value 3.
+    #[bits(2)]
+    pub c3: u8,
+    _pad2: u8,
+}
 
 mmio! {
-    pub const CHARACTERS: [Character; 2048] = 0x00078000;
+    pub const GPLT: [Palette; 4] = 0x0005f860;
+    pub const GPLT0: Palette = 0x0005f860;
+    pub const GPLT1: Palette = 0x0005f862;
+    pub const GPLT2: Palette = 0x0005f864;
+    pub const GPLT3: Palette = 0x0005f866;
+
+    pub const BKCOL: u16 = 0x0005f870;
 }
