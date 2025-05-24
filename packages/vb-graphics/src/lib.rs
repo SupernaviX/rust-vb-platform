@@ -1,6 +1,6 @@
 #![no_std]
 
-use vb_rt::sys::vip;
+use vb_rt::sys::vip::{self, Character};
 
 pub fn init_display() {
     vip::REST.write(0);
@@ -25,4 +25,8 @@ pub fn set_colors(brta: u8, brtb: u8, brtc: u8) {
 
 pub fn set_bkcol(value: u16) {
     vip::BKCOL.write(value);
+}
+
+pub fn load_character_data(data: &[Character], index: usize) {
+    vip::CHARACTERS.write_slice(data, index);
 }

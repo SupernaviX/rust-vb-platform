@@ -98,3 +98,11 @@ mmio! {
 
     pub const BKCOL: u16 = 0x0005f870;
 }
+
+#[repr(C, align(4))]
+#[derive(Clone, Copy)]
+pub struct Character(pub [u16; 8]);
+
+mmio! {
+    pub const CHARACTERS: [Character; 2048] = 0x00078000;
+}

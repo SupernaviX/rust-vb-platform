@@ -2,7 +2,7 @@
 #[derive(Clone, Copy)]
 pub struct VolatilePointer<T>(*mut T);
 
-impl<T> VolatilePointer<T> {
+impl<T: Copy> VolatilePointer<T> {
     /// Construct a new volatile pointer from an address.
     ///
     /// # Safety
@@ -21,6 +21,15 @@ impl<T> VolatilePointer<T> {
     pub fn write(self, val: T) {
         // SAFETY: constructor guarantees that address is valid and aligned
         unsafe { self.0.write_volatile(val) }
+    }
+}
+
+impl<T: Copy, const N: usize> VolatilePointer<[T; N]> {
+    pub fn write_slice(self, slice: &[T], start: usize) {
+        assert!(start + slice.len() < N);
+        for (src, offset) in slice.iter().zip(start..start + slice.len()) {
+            unsafe { self.0.cast::<T>().add(offset).write_volatile(*src) };
+        }
     }
 }
 

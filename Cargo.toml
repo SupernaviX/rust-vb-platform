@@ -8,3 +8,6 @@ members = [
     "examples/hello-world",
 ]
 resolver = "3"
+
+[profile.release]
+lto = true
