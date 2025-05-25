@@ -17,4 +17,5 @@ vb-graphics = { path = "../../packages/vb-graphics" }
 vb-rt = { path = "../../packages/vb-rt" }
 
 [build-dependencies]
+vb-graphics-build = { path = "../../packages/vb-graphics-build" }
 vb-rt-build = { path = "../../packages/vb-rt-build" }

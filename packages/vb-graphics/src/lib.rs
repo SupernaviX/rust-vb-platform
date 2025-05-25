@@ -1,11 +1,26 @@
 #![no_std]
 
+mod assets;
+
 use core::sync::atomic::AtomicBool;
 
+pub use assets::Image;
 use vb_rt::sys::{halt, vip};
+
+const PALETTES: [vip::Palette; 4] = [
+    vip::Palette::new().with_c1(1).with_c2(2).with_c3(3),
+    vip::Palette::new().with_c1(0).with_c2(2).with_c3(3),
+    vip::Palette::new().with_c1(1).with_c2(0).with_c3(3),
+    vip::Palette::new().with_c1(1).with_c2(2).with_c3(0),
+];
 
 pub fn init_display() {
     vip::REST.write(0);
+
+    vip::GPLT0.write(PALETTES[0]);
+    vip::GPLT1.write(PALETTES[1]);
+    vip::GPLT2.write(PALETTES[2]);
+    vip::GPLT3.write(PALETTES[3]);
 
     while !vip::DPSTTS.read().scanrdy() {}
 
@@ -68,23 +83,5 @@ impl FrameMonitor {
 impl Default for FrameMonitor {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-pub struct Image {
-    pub width_cells: u16,
-    pub height_cells: u16,
-    pub data: &'static [vip::BGCell],
-}
-
-impl Image {
-    pub fn render_to_bgmap(&self, index: u16, x: u16, y: u16) {
-        let map = vip::BG_MAPS.index(index as usize);
-        let offsets = (y..y + self.height_cells)
-            .flat_map(move |y| (x..x + self.width_cells).map(move |x| y * 64 + x));
-        for (src, offset) in self.data.iter().zip(offsets) {
-            let dst = map.index(offset as usize);
-            dst.write(*src);
-        }
     }
 }
