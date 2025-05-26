@@ -1,23 +1,23 @@
 use vb_rt::sys::vip;
 
 pub struct Image {
-    pub width_cells: u16,
-    pub height_cells: u16,
+    pub width_cells: u8,
+    pub height_cells: u8,
     pub data: &'static [vip::BGCell],
 }
 
 impl Image {
-    pub fn render_to_bgmap(&self, index: u16, dst: (u16, u16)) {
-        self.render_region_to_bgmap(index, dst, (0, 0), (self.width_cells, self.height_cells));
+    pub fn render_to_bgmap(&self, index: u8, dst: (u8, u8)) -> (i16, i16) {
+        self.render_region_to_bgmap(index, dst, (0, 0), (self.width_cells, self.height_cells))
     }
 
     pub fn render_region_to_bgmap(
         &self,
-        index: u16,
-        dst: (u16, u16),
-        src: (u16, u16),
-        cells: (u16, u16),
-    ) {
+        index: u8,
+        dst: (u8, u8),
+        src: (u8, u8),
+        cells: (u8, u8),
+    ) -> (i16, i16) {
         let map = vip::BG_MAPS.index(index as usize);
         for y in 0..cells.1 {
             let src_y = src.1 + y;
@@ -26,9 +26,10 @@ impl Image {
             let src_data = &self.data[src_start as usize..src_end as usize];
 
             let dst_y = dst.1 + y;
-            let dst_start = dst_y * 64 + dst.0;
-            map.write_slice(src_data, dst_start as usize);
+            let dst_start = dst_y as usize * 64 + dst.0 as usize;
+            map.write_slice(src_data, dst_start);
         }
+        (dst.0 as i16 * 8, dst.1 as i16 * 8)
     }
 }
 
