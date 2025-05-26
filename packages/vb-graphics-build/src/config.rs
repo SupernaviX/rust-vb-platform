@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::Deserialize;
 
 pub struct Options {
@@ -48,7 +48,7 @@ impl Options {
 
 #[derive(Deserialize, Debug)]
 pub struct RawAssets {
-    #[serde(rename = "image")]
+    #[serde(rename = "image", default)]
     pub images: BTreeMap<String, RawImage>,
 }
 
@@ -70,7 +70,8 @@ pub struct RawImage {
 
 pub fn parse(opts: &mut Options) -> Result<RawAssets> {
     let config_path = opts.config_file_path();
-    let file = std::fs::read_to_string(&config_path)?;
+    let file = std::fs::read_to_string(&config_path)
+        .with_context(|| format!("could not read config file {}", config_path.display()))?;
     let assets: RawAssets = toml::from_str(&file)?;
     Ok(assets)
 }
