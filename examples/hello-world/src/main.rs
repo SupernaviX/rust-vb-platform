@@ -21,8 +21,8 @@ fn main() {
     gfx::set_bkcol(0);
     gfx::load_character_data(&assets::ALL, 0);
 
-    assets::BACKGROUND.render_to_bgmap(0, 0, 0);
-    assets::SMILE.render_to_bgmap(0, 48, 0);
+    assets::BACKGROUND.render_to_bgmap(0, (0, 0));
+    assets::SMILE.render_to_bgmap(0, (48, 0));
 
     FRAME.enable_interrupts();
 

@@ -7,13 +7,27 @@ pub struct Image {
 }
 
 impl Image {
-    pub fn render_to_bgmap(&self, index: u16, x: u16, y: u16) {
+    pub fn render_to_bgmap(&self, index: u16, dst: (u16, u16)) {
+        self.render_region_to_bgmap(index, dst, (0, 0), (self.width_cells, self.height_cells));
+    }
+
+    pub fn render_region_to_bgmap(
+        &self,
+        index: u16,
+        dst: (u16, u16),
+        src: (u16, u16),
+        cells: (u16, u16),
+    ) {
         let map = vip::BG_MAPS.index(index as usize);
-        let offsets = (y..y + self.height_cells)
-            .flat_map(move |y| (x..x + self.width_cells).map(move |x| y * 64 + x));
-        for (src, offset) in self.data.iter().zip(offsets) {
-            let dst = map.index(offset as usize);
-            dst.write(*src);
+        for y in 0..cells.1 {
+            let src_y = src.1 + y;
+            let src_start = src_y * self.width_cells + src.0;
+            let src_end = src_start + cells.0;
+            let src_data = &self.data[src_start as usize..src_end as usize];
+
+            let dst_y = dst.1 + y;
+            let dst_start = dst_y * 64 + dst.0;
+            map.write_slice(src_data, dst_start as usize);
         }
     }
 }
