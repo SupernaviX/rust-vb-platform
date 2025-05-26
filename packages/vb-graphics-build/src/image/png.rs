@@ -108,10 +108,19 @@ impl PngVieW<'_> {
         if x >= self.size.0 || y >= self.size.1 {
             return None;
         }
-        let real_x = x + self.position.0;
-        let real_y = y + self.position.1;
-        // TODO: account for transform
-        assert!(!self.transform.h_flip && !self.transform.v_flip && !self.transform.transpose);
+        let mut real_x = if self.transform.h_flip {
+            self.position.0 + self.size.0 - x - 1
+        } else {
+            self.position.0 + x
+        };
+        let mut real_y = if self.transform.v_flip {
+            self.position.1 + self.size.1 - y - 1
+        } else {
+            self.position.1 + y
+        };
+        if self.transform.transpose {
+            std::mem::swap(&mut real_x, &mut real_y);
+        }
         self.png.get_pixel(real_x, real_y)
     }
 }
