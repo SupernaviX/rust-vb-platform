@@ -20,13 +20,13 @@ impl Image {
     ) -> (i16, i16) {
         let map = vip::BG_MAPS.index(index as usize);
         for y in 0..cells.1 {
-            let src_y = src.1 + y;
-            let src_start = src_y * self.width_cells + src.0;
-            let src_end = src_start + cells.0;
-            let src_data = &self.data[src_start as usize..src_end as usize];
+            let src_y = (src.1 + y) as usize;
+            let src_start = src_y * self.width_cells as usize + src.0 as usize;
+            let src_end = src_start + cells.0 as usize;
+            let src_data = &self.data[src_start..src_end];
 
-            let dst_y = dst.1 + y;
-            let dst_start = dst_y as usize * 64 + dst.0 as usize;
+            let dst_y = (dst.1 + y) as usize;
+            let dst_start = dst_y * 64 + dst.0 as usize;
             map.write_slice(src_data, dst_start);
         }
         (dst.0 as i16 * 8, dst.1 as i16 * 8)

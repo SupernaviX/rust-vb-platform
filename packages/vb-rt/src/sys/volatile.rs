@@ -37,7 +37,7 @@ impl<T: Copy> VolatilePointer<T> {
 
 impl<T: Copy, const N: usize> VolatilePointer<[T; N]> {
     pub fn write_slice(self, slice: &[T], start: usize) {
-        assert!(start + slice.len() < N);
+        assert!(start + slice.len() <= N);
         for (src, offset) in slice.iter().zip(start..start + slice.len()) {
             unsafe { self.0.cast::<T>().add(offset).write_volatile(*src) };
         }

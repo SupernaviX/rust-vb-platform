@@ -49,8 +49,8 @@ fn main() {
                 .with_bgm(vip::WorldMode::Normal)
                 .with_bg_map_base(0),
         );
-        world.gx().write(smile_x.to_num());
-        world.gy().write(smile_y.to_num());
+        world.gx().write(smile_x.round().to_num());
+        world.gy().write(smile_y.round().to_num());
         world.mx().write(384);
         world.my().write(0);
         world.w().write(15);
