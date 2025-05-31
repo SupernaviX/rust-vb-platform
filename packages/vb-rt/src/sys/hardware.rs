@@ -70,6 +70,11 @@ mmio! {
     pub const SCR: SerialControlData = 0x02000028;
 }
 
+// Real hardware does not support stdout, it is a feature of the Lemur emulator.
+mmio! {
+    pub const STDOUT: u8 = 0x02000030;
+}
+
 // utility for reading controller data
 pub fn read_controller() -> GamePadData {
     SCR.write(SerialControlData::new().with_para_si(true));

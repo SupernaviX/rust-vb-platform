@@ -5,7 +5,10 @@ mod assets;
 
 use fixed::types::I10F6;
 use vb_graphics as gfx;
-use vb_rt::sys::{hardware, vip};
+use vb_rt::{
+    println,
+    sys::{hardware, vip},
+};
 
 vb_rt::rom_header!("Hello World!", "SG", "HIYA");
 vb_rt::main!({ main() });
@@ -26,6 +29,7 @@ fn main() {
 
     FRAME.enable_interrupts();
 
+    let mut counter = 0;
     let mut smile_x = I10F6::from_num(184);
     let mut smile_y = I10F6::from_num(104);
 
@@ -78,6 +82,8 @@ fn main() {
             xspeed *= I10F6::SQRT_2 / 2;
             yspeed *= I10F6::SQRT_2 / 2;
         }
+        println!("{counter}: ({xspeed:?}, {yspeed:?})");
+        counter += 1;
         smile_x = (smile_x + xspeed).clamp(I10F6::ZERO, I10F6::from_num(368));
         smile_y = (smile_y + yspeed).clamp(I10F6::ZERO, I10F6::from_num(208));
 
