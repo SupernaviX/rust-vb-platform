@@ -58,22 +58,34 @@ macro_rules! mmio {
 }
 pub(crate) use mmio;
 
-macro_rules! field_accessor {
-    ($typ:ty, $field:ident, $ft:ty) => {
-        impl VolatilePointer<$typ> {
-            pub const fn $field(self) -> VolatilePointer<$ft> {
-                // assert that the field is the right type
-                const _: () = {
-                    fn dummy(v: $typ) {
-                        let _: $ft = v.$field;
-                    }
-                };
+macro_rules! mmstruct {
+    (
+        $(#[$struct_attr:meta])*
+        $struct_vis:vis struct $struct_name:ident {
+            $(
+                $(#[$field_attr:meta])*
+                $field_vis:vis $field:ident: $field_ty:ty,
+            )*
+        }
+    ) => {
+        $(#[$struct_attr])*
+        $struct_vis struct $struct_name {
+            $(
+                $(#[$field_attr])*
+                $field_vis $field: $field_ty,
+            )*
+        }
 
-                let offset = core::mem::offset_of!($typ, $field);
-                // SAFETY: this is definitely the offset of a field which exists on this type.
-                unsafe { self.field(offset) }
-            }
+        impl $crate::sys::VolatilePointer<$struct_name> {
+            $(
+                $(#[$field_attr])*
+                $field_vis const fn $field(self) -> $crate::sys::VolatilePointer<$field_ty> {
+                    let offset = core::mem::offset_of!($struct_name, $field);
+                    // SAFETY: this is definitely the offset of a field which exists on this type.
+                    unsafe { self.field(offset) }
+                }
+            )*
         }
     };
 }
-pub(crate) use field_accessor;
+pub(crate) use mmstruct;

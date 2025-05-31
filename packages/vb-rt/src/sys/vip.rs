@@ -1,9 +1,6 @@
 use bitfield_struct::bitfield;
 
-use super::{
-    VolatilePointer,
-    volatile::{field_accessor, mmio},
-};
+use super::volatile::{mmio, mmstruct};
 
 #[repr(C, align(4))]
 #[derive(Clone, Copy)]
@@ -82,41 +79,35 @@ pub struct WorldHeader {
     pub lon: bool,
 }
 
-#[repr(C, align(4))]
-#[derive(Clone, Copy)]
-pub struct World {
-    /// Describes the world.
-    pub header: WorldHeader,
-    /// The signed horizontal coordinate of the left edge of the world from the left edge of the image.
-    pub gx: i16,
-    /// The signed parallax offset applied to the world's horizontal coordinate.
-    pub gp: i16,
-    /// The signed vertical coordinate of the top edge of the world from the top edge of the image.
-    pub gy: i16,
-    /// The signed horizontal source coordinate of the pixel within the world's background, relative to the top-left corner of the background, to be displayed in the top-left corner of the world.
-    pub mx: i16,
-    /// The signed parallax offset applied to the background's horizontal source coordinate.
-    pub mp: i16,
-    /// The signed vertical source coordinate of the pixel within the world's background, relative to the top-left corner of the background, to be displayed in the top-left corner of the world.
-    pub my: i16,
-    /// Add 1 to this figure to yield the width in pixels of the world. This field's format depends on BGM.
-    pub w: i16,
-    /// Add 1 to this figure to yield the height in pixels of the world.
-    pub h: i16,
-    /// Specifies the location in world parameter memory where this world's parameters can be found.
-    pub param_base: u16,
-    /// When OVER is set, characters beyond the background's bounds will use the cell in background map memory at the index given by this field.
-    pub overplane_character: u16,
-    _pad: [u16; 5],
+mmstruct! {
+    #[repr(C, align(4))]
+    #[derive(Clone, Copy)]
+    pub struct World {
+        /// Describes the world.
+        pub header: WorldHeader,
+        /// The signed horizontal coordinate of the left edge of the world from the left edge of the image.
+        pub gx: i16,
+        /// The signed parallax offset applied to the world's horizontal coordinate.
+        pub gp: i16,
+        /// The signed vertical coordinate of the top edge of the world from the top edge of the image.
+        pub gy: i16,
+        /// The signed horizontal source coordinate of the pixel within the world's background, relative to the top-left corner of the background, to be displayed in the top-left corner of the world.
+        pub mx: i16,
+        /// The signed parallax offset applied to the background's horizontal source coordinate.
+        pub mp: i16,
+        /// The signed vertical source coordinate of the pixel within the world's background, relative to the top-left corner of the background, to be displayed in the top-left corner of the world.
+        pub my: i16,
+        /// Add 1 to this figure to yield the width in pixels of the world. This field's format depends on BGM.
+        pub w: i16,
+        /// Add 1 to this figure to yield the height in pixels of the world.
+        pub h: i16,
+        /// Specifies the location in world parameter memory where this world's parameters can be found.
+        pub param_base: u16,
+        /// When OVER is set, characters beyond the background's bounds will use the cell in background map memory at the index given by this field.
+        pub overplane_character: u16,
+        _pad: [u16; 5],
+    }
 }
-
-field_accessor!(World, header, WorldHeader);
-field_accessor!(World, gx, i16);
-field_accessor!(World, gy, i16);
-field_accessor!(World, mx, i16);
-field_accessor!(World, my, i16);
-field_accessor!(World, w, i16);
-field_accessor!(World, h, i16);
 
 mmio! {
     pub const WORLDS: [World; 32] = 0x0003d800;
