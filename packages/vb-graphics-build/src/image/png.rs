@@ -67,8 +67,8 @@ impl PngContents {
         position: (usize, usize),
         size: (usize, usize),
         transform: Transform,
-    ) -> PngVieW {
-        PngVieW {
+    ) -> PngView {
+        PngView {
             png: self,
             position,
             size,
@@ -96,14 +96,14 @@ fn load_png_contents(path: &Path) -> Result<PngContents> {
     }
 }
 
-pub struct PngVieW<'a> {
+pub struct PngView<'a> {
     png: &'a PngContents,
     position: (usize, usize),
     size: (usize, usize),
     transform: Transform,
 }
 
-impl PngVieW<'_> {
+impl PngView<'_> {
     pub fn get_pixel(&self, x: usize, y: usize) -> Option<Shade> {
         if x >= self.size.0 || y >= self.size.1 {
             return None;
