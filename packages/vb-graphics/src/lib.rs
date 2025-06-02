@@ -1,10 +1,11 @@
 #![no_std]
 
 mod assets;
+pub mod text;
 
 use core::sync::atomic::AtomicBool;
 
-pub use assets::Image;
+pub use assets::{Font, FontCharacter, Image, Texture};
 use vb_rt::sys::{halt, vip};
 
 const PALETTES: [vip::Palette; 4] = [

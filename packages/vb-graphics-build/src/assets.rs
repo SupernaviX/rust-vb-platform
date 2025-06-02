@@ -1,10 +1,12 @@
 mod png;
+mod ttf;
 
 use std::collections::BTreeMap;
 
 use crate::{
     Options,
-    config::{RawAssets, RawImage},
+    assets::ttf::TtfAtlas,
+    config::{RawAssets, RawFont, RawImage},
 };
 use anyhow::{Result, bail};
 use bitfield_struct::bitfield;
@@ -20,23 +22,29 @@ pub enum Shade {
 }
 
 pub fn process(opts: &mut Options, assets: RawAssets) -> Result<Assets> {
-    ImageProcessor::new(opts).process(assets)
+    AssetProcessor::new(opts).process(assets)
 }
 
-struct ImageProcessor<'a> {
+struct AssetProcessor<'a> {
     opts: &'a mut Options,
     pngs: PngAtlas,
+    ttfs: TtfAtlas,
     chardata: BTreeMap<String, CharData>,
     imagedata: BTreeMap<String, ImageData>,
+    texturedata: BTreeMap<String, TextureData>,
+    fontdata: BTreeMap<String, FontData>,
 }
 
-impl<'a> ImageProcessor<'a> {
+impl<'a> AssetProcessor<'a> {
     pub fn new(opts: &'a mut Options) -> Self {
         Self {
             opts,
             pngs: PngAtlas::new(),
+            ttfs: TtfAtlas::new(),
             chardata: BTreeMap::new(),
             imagedata: BTreeMap::new(),
+            texturedata: BTreeMap::new(),
+            fontdata: BTreeMap::new(),
         }
     }
 
@@ -44,9 +52,14 @@ impl<'a> ImageProcessor<'a> {
         for (name, image) in assets.images {
             self.process_image(name, image)?;
         }
+        for (name, font) in assets.fonts {
+            self.process_font(name, font)?;
+        }
         Ok(Assets {
             chardata: self.chardata.into_values().collect(),
             images: self.imagedata.into_values().collect(),
+            textures: self.texturedata.into_values().collect(),
+            fonts: self.fontdata.into_values().collect(),
         })
     }
 
@@ -127,6 +140,85 @@ impl<'a> ImageProcessor<'a> {
         );
         Ok(())
     }
+
+    fn process_font(&mut self, name: String, font: RawFont) -> Result<()> {
+        let ttf = self.ttfs.open(self.opts.input_path(&font.file))?;
+        let mut chars = vec![];
+        for byte in 0u8..128u8 {
+            let character = byte as char;
+            chars.push(ttf.rasterize(character, font.size));
+        }
+
+        let width = chars.iter().map(|c| c.width).sum::<usize>();
+        let height = chars
+            .iter()
+            .map(|c| c.height as i32 - c.offset)
+            .max()
+            .unwrap() as usize;
+        let baseline = height as i32 + chars.iter().map(|c| c.offset).min().unwrap();
+
+        let mut pixel_data = vec![0u8; width * height];
+        let mut font_chars = Vec::with_capacity(chars.len());
+        let mut current_x = 0;
+        for char in chars {
+            let y_offset = (baseline - char.offset) as usize - char.height;
+            for y in 0..char.height {
+                let src_start = y * char.width;
+                let src_row = &char.pixels[src_start..src_start + char.width];
+                let dst_start = (y_offset + y) * width + current_x;
+                let dst_row = &mut pixel_data[dst_start..dst_start + char.width];
+                for (dst, src) in dst_row.iter_mut().zip(src_row) {
+                    *dst = match src {
+                        Shade::Shade1 => 1,
+                        Shade::Shade2 => 2,
+                        Shade::Shade3 => 3,
+                        _ => 0,
+                    };
+                }
+            }
+            font_chars.push(FontCharacterData {
+                x: current_x as u16,
+                y: 0,
+                width: char.width as u16,
+                height: (baseline - char.offset) as u16,
+            });
+            current_x += char.width;
+        }
+
+        let mut pixels = Vec::with_capacity(width.div_ceil(4) * height);
+        for y in 0..height {
+            let src_start = y * width;
+            let src_row = &pixel_data[src_start..src_start + width];
+            pixels.extend(src_row.chunks(4).map(|chunk| {
+                let mut value = 0;
+                for (i, pixel) in chunk.iter().enumerate() {
+                    value |= pixel << (i * 2);
+                }
+                value
+            }));
+        }
+        let texture_name = format!("{name}-data");
+        self.texturedata.insert(
+            texture_name.clone(),
+            TextureData {
+                name: texture_name.clone(),
+                width,
+                height,
+                pixels,
+            },
+        );
+        self.fontdata.insert(
+            name.clone(),
+            FontData {
+                name,
+                texture_name,
+                line_height: height as u16,
+                chars: font_chars,
+            },
+        );
+
+        Ok(())
+    }
 }
 
 fn shades_to_chardata(shades: [[Option<Shade>; 8]; 8]) -> Result<([u16; 8], u8)> {
@@ -168,6 +260,8 @@ fn shades_to_chardata(shades: [[Option<Shade>; 8]; 8]) -> Result<([u16; 8], u8)>
 pub struct Assets {
     pub chardata: Vec<CharData>,
     pub images: Vec<ImageData>,
+    pub textures: Vec<TextureData>,
+    pub fonts: Vec<FontData>,
 }
 
 pub struct CharData {
@@ -195,6 +289,36 @@ pub struct ImageData {
     pub width: usize,
     pub height: usize,
     pub cells: Vec<u16>,
+}
+
+pub struct TextureData {
+    pub name: String,
+    pub width: usize,
+    pub height: usize,
+    pub pixels: Vec<u8>,
+}
+
+pub struct FontData {
+    pub name: String,
+    pub texture_name: String,
+    pub line_height: u16,
+    pub chars: Vec<FontCharacterData>,
+}
+pub struct FontCharacterData {
+    pub x: u16,
+    pub y: u16,
+    pub width: u16,
+    pub height: u16,
+}
+impl FontCharacterData {
+    pub fn as_bytes(&self) -> [u8; 8] {
+        let mut result = [0; 8];
+        result[0..2].copy_from_slice(&self.x.to_le_bytes());
+        result[2..4].copy_from_slice(&self.y.to_le_bytes());
+        result[4..6].copy_from_slice(&self.width.to_le_bytes());
+        result[6..8].copy_from_slice(&self.height.to_le_bytes());
+        result
+    }
 }
 
 fn flip_char(char: [u16; 8], h_flip: bool, v_flip: bool) -> [u16; 8] {

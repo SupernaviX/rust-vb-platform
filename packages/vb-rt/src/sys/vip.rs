@@ -8,6 +8,7 @@ pub struct Character(pub [u16; 8]);
 
 mmio! {
     pub const CHARACTERS: [Character; 2048] = 0x00078000;
+    pub const CHARACTER_HWS: [u16; 2048 * 8] = 0x00078000;
 }
 
 #[bitfield(u16)]

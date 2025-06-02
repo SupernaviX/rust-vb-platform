@@ -50,6 +50,8 @@ impl Options {
 pub struct RawAssets {
     #[serde(rename = "image", default)]
     pub images: BTreeMap<String, RawImage>,
+    #[serde(rename = "font", default)]
+    pub fonts: BTreeMap<String, RawFont>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -66,6 +68,12 @@ pub struct RawImage {
     pub rotate: usize,
     pub position: Option<(usize, usize)>,
     pub size: Option<(usize, usize)>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct RawFont {
+    pub file: PathBuf,
+    pub size: f32,
 }
 
 pub fn parse(opts: &mut Options) -> Result<RawAssets> {
