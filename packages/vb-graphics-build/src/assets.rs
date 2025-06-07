@@ -67,9 +67,7 @@ impl<'a> AssetProcessor<'a> {
         let png = self.pngs.open(self.opts.input_path(&image.file))?;
 
         let position = image.position.unwrap_or_default();
-        let size = image
-            .size
-            .unwrap_or((png.size.0 - position.0, png.size.1 - position.1));
+        let size = image.size.unwrap_or(png.size);
         let mut transform = Transform::default();
         if image.hflip {
             transform.h_flip = true;

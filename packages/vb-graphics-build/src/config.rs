@@ -66,7 +66,7 @@ pub struct RawImage {
     pub transpose: bool,
     #[serde(default)]
     pub rotate: usize,
-    pub position: Option<(usize, usize)>,
+    pub position: Option<(isize, isize)>,
     pub size: Option<(usize, usize)>,
 }
 

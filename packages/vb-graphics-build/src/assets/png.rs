@@ -64,7 +64,7 @@ impl PngContents {
     }
     pub fn view(
         &self,
-        position: (usize, usize),
+        position: (isize, isize),
         size: (usize, usize),
         transform: Transform,
     ) -> PngView {
@@ -98,7 +98,7 @@ fn load_png_contents(path: &Path) -> Result<PngContents> {
 
 pub struct PngView<'a> {
     png: &'a PngContents,
-    position: (usize, usize),
+    position: (isize, isize),
     size: (usize, usize),
     transform: Transform,
 }
@@ -118,9 +118,13 @@ impl PngView<'_> {
         if self.transform.transpose {
             std::mem::swap(&mut rel_x, &mut rel_y);
         }
-        let real_x = self.position.0 + rel_x;
-        let real_y = self.position.1 + rel_y;
-        self.png.get_pixel(real_x, real_y)
+        let real_x = self.position.0 + rel_x as isize;
+        let real_y = self.position.1 + rel_y as isize;
+        if real_x >= 0 && real_y >= 0 {
+            self.png.get_pixel(real_x as usize, real_y as usize)
+        } else {
+            None
+        }
     }
 }
 
