@@ -108,19 +108,18 @@ impl PngView<'_> {
         if x >= self.size.0 || y >= self.size.1 {
             return None;
         }
-        let mut real_x = if self.transform.h_flip {
-            self.position.0 + self.size.0 - x - 1
-        } else {
-            self.position.0 + x
-        };
-        let mut real_y = if self.transform.v_flip {
-            self.position.1 + self.size.1 - y - 1
-        } else {
-            self.position.1 + y
-        };
-        if self.transform.transpose {
-            std::mem::swap(&mut real_x, &mut real_y);
+        let (mut rel_x, mut rel_y) = (x, y);
+        if self.transform.h_flip {
+            rel_x = self.size.0 - rel_x;
         }
+        if self.transform.v_flip {
+            rel_y = self.size.1 - rel_y;
+        }
+        if self.transform.transpose {
+            std::mem::swap(&mut rel_x, &mut rel_y);
+        }
+        let real_x = self.position.0 + rel_x;
+        let real_y = self.position.1 + rel_y;
         self.png.get_pixel(real_x, real_y)
     }
 }
