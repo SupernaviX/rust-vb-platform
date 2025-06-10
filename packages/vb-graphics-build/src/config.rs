@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
 pub struct Options {
@@ -47,12 +47,21 @@ impl Options {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct RawAssets {
+struct RawAssetFile {
+    #[serde(default)]
+    pub imports: Vec<PathBuf>,
     #[serde(rename = "image", default)]
     pub images: BTreeMap<String, RawImage>,
     #[serde(rename = "mask", default)]
     pub masks: BTreeMap<String, RawMask>,
     #[serde(rename = "font", default)]
+    pub fonts: BTreeMap<String, RawFont>,
+}
+
+#[derive(Debug)]
+pub struct RawAssets {
+    pub images: BTreeMap<String, RawImage>,
+    pub masks: BTreeMap<String, RawMask>,
     pub fonts: BTreeMap<String, RawFont>,
 }
 
@@ -91,9 +100,27 @@ pub struct RawFont {
 }
 
 pub fn parse(opts: &mut Options) -> Result<RawAssets> {
-    let config_path = opts.config_file_path();
-    let file = std::fs::read_to_string(&config_path)
-        .with_context(|| format!("could not read config file {}", config_path.display()))?;
-    let assets: RawAssets = toml::from_str(&file)?;
+    let mut assets = RawAssets {
+        images: BTreeMap::new(),
+        masks: BTreeMap::new(),
+        fonts: BTreeMap::new(),
+    };
+    let mut paths = vec![opts.config_file_path()];
+    while let Some(path) = paths.pop() {
+        let file = std::fs::read_to_string(&path)
+            .with_context(|| format!("could not read config file {}", path.display()))?;
+        let file: RawAssetFile = toml::from_str(&file)?;
+        let Some(dir) = path.parent() else {
+            bail!("invalid config file path {}", path.display());
+        };
+
+        for import in file.imports {
+            paths.push(opts.input_path(&dir.join(import)));
+        }
+
+        assets.fonts.extend(file.fonts);
+        assets.images.extend(file.images);
+        assets.masks.extend(file.masks);
+    }
     Ok(assets)
 }
