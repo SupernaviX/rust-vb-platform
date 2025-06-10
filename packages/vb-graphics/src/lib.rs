@@ -5,7 +5,7 @@ pub mod text;
 
 use core::sync::atomic::AtomicBool;
 
-pub use assets::{Font, FontCharacter, Image, Texture};
+pub use assets::{Font, FontCharacter, Image, Mask, Texture};
 use vb_rt::sys::{halt, vip};
 
 const PALETTES: [vip::Palette; 4] = [

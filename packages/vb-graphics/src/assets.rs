@@ -34,6 +34,71 @@ impl Image {
 }
 
 #[derive(Debug)]
+pub struct Mask {
+    pub width: u16,
+    pub height: u16,
+    pub data: &'static [u8],
+}
+
+impl Mask {
+    pub fn intersects(&self, other: &Mask, offset: (i16, i16)) -> bool {
+        let left = offset.0.max(0) as usize;
+        let right = other.width.saturating_add_signed(offset.0).min(self.width) as usize;
+        let top = offset.1.max(0) as usize;
+        let bottom = other
+            .height
+            .saturating_add_signed(offset.1)
+            .min(self.height) as usize;
+
+        let lhs_width_cells = self.width.div_ceil(8) as usize;
+        let rhs_width_cells = other.width.div_ceil(8) as usize;
+        let length = right - left;
+        for y in top..bottom {
+            let other_left = left.saturating_add_signed(-offset.0 as isize);
+            let other_y = y.saturating_add_signed(-offset.1 as isize);
+
+            let lhs_bytes = &self.data[(y * lhs_width_cells + left / 8)..];
+            let lhs_offset = left % 8;
+            let rhs_bytes = &other.data[(other_y * rhs_width_cells + other_left / 8)..];
+            let rhs_offset = other_left % 8;
+            if Self::row_intersects(lhs_bytes, lhs_offset, rhs_bytes, rhs_offset, length) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn row_intersects(
+        mut lhs_bytes: &[u8],
+        mut lhs_offset: usize,
+        mut rhs_bytes: &[u8],
+        mut rhs_offset: usize,
+        mut length: usize,
+    ) -> bool {
+        while length > 0 {
+            let to_consume = length.min(8 - lhs_offset).min(8 - rhs_offset);
+            let lhs = lhs_bytes[0] << to_consume;
+            let rhs = rhs_bytes[0] << to_consume;
+            if lhs & rhs != 0 {
+                return true;
+            }
+            lhs_offset += to_consume;
+            if lhs_offset == 8 {
+                lhs_offset = 0;
+                lhs_bytes = lhs_bytes.split_at(1).1;
+            }
+            rhs_offset += to_consume;
+            if rhs_offset == 8 {
+                rhs_offset = 0;
+                rhs_bytes = rhs_bytes.split_at(1).1;
+            }
+            length -= to_consume;
+        }
+        false
+    }
+}
+
+#[derive(Debug)]
 pub struct Texture {
     pub width: u16,
     pub height: u16,
@@ -164,6 +229,13 @@ macro_rules! include_chardata {
 macro_rules! include_celldata {
     ($path:expr) => {
         $crate::resource_value_impl!(4, include_bytes!($crate::out_path!($path)))
+    };
+}
+
+#[macro_export]
+macro_rules! include_maskdata {
+    ($path:expr) => {
+        include_bytes!($crate::out_path!($path))
     };
 }
 

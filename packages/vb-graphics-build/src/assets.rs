@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 
 use crate::{
     Options,
-    assets::ttf::TtfAtlas,
-    config::{RawAssets, RawFont, RawImage},
+    assets::{png::PngContents, ttf::TtfAtlas},
+    config::{RawAssets, RawFont, RawImage, RawImageRegion, RawMask},
 };
 use anyhow::{Result, bail};
 use bitfield_struct::bitfield;
@@ -31,6 +31,7 @@ struct AssetProcessor<'a> {
     ttfs: TtfAtlas,
     chardata: BTreeMap<String, CharData>,
     imagedata: BTreeMap<String, ImageData>,
+    maskdata: BTreeMap<String, MaskData>,
     texturedata: BTreeMap<String, TextureData>,
     fontdata: BTreeMap<String, FontData>,
 }
@@ -43,6 +44,7 @@ impl<'a> AssetProcessor<'a> {
             ttfs: TtfAtlas::new(),
             chardata: BTreeMap::new(),
             imagedata: BTreeMap::new(),
+            maskdata: BTreeMap::new(),
             texturedata: BTreeMap::new(),
             fontdata: BTreeMap::new(),
         }
@@ -52,48 +54,28 @@ impl<'a> AssetProcessor<'a> {
         for (name, image) in assets.images {
             self.process_image(name, image)?;
         }
+        for (name, mask) in assets.masks {
+            self.process_mask(name, mask)?;
+        }
         for (name, font) in assets.fonts {
             self.process_font(name, font)?;
         }
         Ok(Assets {
             chardata: self.chardata.into_values().collect(),
             images: self.imagedata.into_values().collect(),
+            masks: self.maskdata.into_values().collect(),
             textures: self.texturedata.into_values().collect(),
             fonts: self.fontdata.into_values().collect(),
         })
     }
 
     fn process_image(&mut self, name: String, image: RawImage) -> Result<()> {
-        let png = self.pngs.open(self.opts.input_path(&image.file))?;
-
-        let position = image.position.unwrap_or_default();
-        let size = image.size.unwrap_or(png.size);
-        let mut transform = Transform::default();
-        if image.hflip {
-            transform.h_flip = true;
-        }
-        if image.vflip {
-            transform.v_flip = true;
-        }
-        if image.transpose {
-            transform.transpose = true;
-        }
-        match image.rotate % 360 {
-            0 => {}
-            90 => {
-                transform.transpose = !transform.transpose;
-                transform.h_flip = !transform.h_flip;
-            }
-            180 => {
-                transform.h_flip = !transform.h_flip;
-                transform.v_flip = !transform.v_flip;
-            }
-            270 => {
-                transform.transpose = !transform.transpose;
-                transform.v_flip = !transform.v_flip;
-            }
-            _ => bail!("Can only rotate multiples of 90 degrees"),
-        }
+        let png = self.pngs.open(self.opts.input_path(&image.region.file))?;
+        let ImageRegion {
+            position,
+            size,
+            transform,
+        } = parse_region(png, &image.region)?;
         let view = png.view(position, size, transform);
 
         let chardata = self
@@ -136,6 +118,43 @@ impl<'a> AssetProcessor<'a> {
                 cells,
             },
         );
+        Ok(())
+    }
+
+    fn process_mask(&mut self, name: String, mask: RawMask) -> Result<()> {
+        let png = self.pngs.open(self.opts.input_path(&mask.region.file))?;
+        let ImageRegion {
+            position,
+            size,
+            transform,
+        } = parse_region(png, &mask.region)?;
+        let view = png.view(position, size, transform);
+
+        let mut pixels = vec![];
+        for y in 0..size.1 {
+            for cell_x in (0..size.0).step_by(8) {
+                let mut collision_data = 0u8;
+                for x in 0..8 {
+                    collision_data >>= 1;
+                    let pixel = view.get_pixel(x + cell_x, y);
+                    if pixel.is_some_and(|s| s != Shade::Transparent) {
+                        collision_data |= 0x80;
+                    }
+                }
+                pixels.push(collision_data);
+            }
+        }
+
+        self.maskdata.insert(
+            name.to_string(),
+            MaskData {
+                name: name.to_string(),
+                width: size.0,
+                height: size.1,
+                pixels,
+            },
+        );
+
         Ok(())
     }
 
@@ -219,6 +238,49 @@ impl<'a> AssetProcessor<'a> {
     }
 }
 
+fn parse_region(png: &PngContents, region: &RawImageRegion) -> Result<ImageRegion> {
+    let position = region.position.unwrap_or_default();
+    let size = region.size.unwrap_or(png.size);
+    let mut transform = Transform::default();
+    if region.hflip {
+        transform.h_flip = true;
+    }
+    if region.vflip {
+        transform.v_flip = true;
+    }
+    if region.transpose {
+        transform.transpose = true;
+    }
+    match region.rotate % 360 {
+        0 => {}
+        90 => {
+            transform.transpose = !transform.transpose;
+            transform.h_flip = !transform.h_flip;
+        }
+        180 => {
+            transform.h_flip = !transform.h_flip;
+            transform.v_flip = !transform.v_flip;
+        }
+        270 => {
+            transform.transpose = !transform.transpose;
+            transform.v_flip = !transform.v_flip;
+        }
+        _ => bail!("Can only rotate multiples of 90 degrees"),
+    }
+
+    Ok(ImageRegion {
+        position,
+        size,
+        transform,
+    })
+}
+
+struct ImageRegion {
+    position: (isize, isize),
+    size: (usize, usize),
+    transform: Transform,
+}
+
 fn shades_to_chardata(shades: [[Option<Shade>; 8]; 8]) -> Result<([u16; 8], u8)> {
     let mut char = [0; 8];
     let mut seen_shades = vec![];
@@ -258,6 +320,7 @@ fn shades_to_chardata(shades: [[Option<Shade>; 8]; 8]) -> Result<([u16; 8], u8)>
 pub struct Assets {
     pub chardata: Vec<CharData>,
     pub images: Vec<ImageData>,
+    pub masks: Vec<MaskData>,
     pub textures: Vec<TextureData>,
     pub fonts: Vec<FontData>,
 }
@@ -287,6 +350,13 @@ pub struct ImageData {
     pub width: usize,
     pub height: usize,
     pub cells: Vec<u16>,
+}
+
+pub struct MaskData {
+    pub name: String,
+    pub width: usize,
+    pub height: usize,
+    pub pixels: Vec<u8>,
 }
 
 pub struct TextureData {

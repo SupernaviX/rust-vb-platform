@@ -50,6 +50,8 @@ impl Options {
 pub struct RawAssets {
     #[serde(rename = "image", default)]
     pub images: BTreeMap<String, RawImage>,
+    #[serde(rename = "mask", default)]
+    pub masks: BTreeMap<String, RawMask>,
     #[serde(rename = "font", default)]
     pub fonts: BTreeMap<String, RawFont>,
 }
@@ -57,6 +59,18 @@ pub struct RawAssets {
 #[derive(Deserialize, Debug)]
 pub struct RawImage {
     pub chardata: String,
+    #[serde(flatten)]
+    pub region: RawImageRegion,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct RawMask {
+    #[serde(flatten)]
+    pub region: RawImageRegion,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct RawImageRegion {
     pub file: PathBuf,
     #[serde(default)]
     pub hflip: bool,

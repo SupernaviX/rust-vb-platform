@@ -55,6 +55,28 @@ pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
         writeln!(file)?;
     }
 
+    for mask in assets.masks {
+        let maskdata_filename = format!("mask.{}.bin", mask.name);
+        let mut maskdata_file = opts.output_file(&maskdata_filename)?;
+        maskdata_file.write_all(&mask.pixels)?;
+        maskdata_file.flush()?;
+
+        writeln!(file, "#[allow(dead_code)]")?;
+        writeln!(
+            file,
+            "pub const {}: vb_graphics::Mask = vb_graphics::Mask {{",
+            rust_identifier(&mask.name)
+        )?;
+        writeln!(file, "    width: {},", mask.width)?;
+        writeln!(file, "    height: {},", mask.height)?;
+        writeln!(
+            file,
+            "    data: vb_graphics::include_maskdata!(\"{maskdata_filename}\"),"
+        )?;
+        writeln!(file, "}};")?;
+        writeln!(file)?;
+    }
+
     for texture in assets.textures {
         let texturedata_filename = format!("texture.{}.bin", texture.name);
         let mut texturedata_file = opts.output_file(&texturedata_filename)?;
