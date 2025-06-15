@@ -28,11 +28,11 @@ impl Options {
         })
     }
 
-    pub(crate) fn config_file_path(&mut self) -> PathBuf {
+    fn config_file_path(&mut self) -> PathBuf {
         self.input_path(&self.config_file.clone())
     }
 
-    pub(crate) fn input_path(&mut self, path: &Path) -> PathBuf {
+    fn input_path(&mut self, path: &Path) -> PathBuf {
         let result = self.input_dir.join(path);
         if self.emit_cargo && self.seen.insert(result.clone()) {
             println!("cargo:rerun-if-changed={}", result.display());
@@ -71,11 +71,26 @@ pub struct RawImage {
     #[serde(flatten)]
     pub region: RawImageRegion,
 }
+impl RawImage {
+    fn fix_files(self, dir: &Path) -> Self {
+        Self {
+            region: self.region.fix_files(dir),
+            ..self
+        }
+    }
+}
 
 #[derive(Deserialize, Debug)]
 pub struct RawMask {
     #[serde(flatten)]
     pub region: RawImageRegion,
+}
+impl RawMask {
+    fn fix_files(self, dir: &Path) -> Self {
+        Self {
+            region: self.region.fix_files(dir),
+        }
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -92,11 +107,27 @@ pub struct RawImageRegion {
     pub position: Option<(isize, isize)>,
     pub size: Option<(usize, usize)>,
 }
+impl RawImageRegion {
+    fn fix_files(self, dir: &Path) -> Self {
+        Self {
+            file: dir.join(self.file),
+            ..self
+        }
+    }
+}
 
 #[derive(Deserialize, Debug)]
 pub struct RawFont {
     pub file: PathBuf,
     pub size: f32,
+}
+impl RawFont {
+    fn fix_files(self, dir: &Path) -> Self {
+        Self {
+            file: dir.join(self.file),
+            ..self
+        }
+    }
 }
 
 pub fn parse(opts: &mut Options) -> Result<RawAssets> {
@@ -118,9 +149,15 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
             paths.push(opts.input_path(&dir.join(import)));
         }
 
-        assets.fonts.extend(file.fonts);
-        assets.images.extend(file.images);
-        assets.masks.extend(file.masks);
+        for (name, font) in file.fonts {
+            assets.fonts.insert(name, font.fix_files(dir));
+        }
+        for (name, image) in file.images {
+            assets.images.insert(name, image.fix_files(dir));
+        }
+        for (name, mask) in file.masks {
+            assets.masks.insert(name, mask.fix_files(dir));
+        }
     }
     Ok(assets)
 }

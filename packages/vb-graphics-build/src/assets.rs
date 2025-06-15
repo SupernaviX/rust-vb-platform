@@ -4,7 +4,6 @@ mod ttf;
 use std::collections::BTreeMap;
 
 use crate::{
-    Options,
     assets::{png::PngContents, ttf::TtfAtlas},
     config::{RawAssets, RawFont, RawImage, RawImageRegion, RawMask},
 };
@@ -21,12 +20,11 @@ pub enum Shade {
     Shade3,
 }
 
-pub fn process(opts: &mut Options, assets: RawAssets) -> Result<Assets> {
-    AssetProcessor::new(opts).process(assets)
+pub fn process(assets: RawAssets) -> Result<Assets> {
+    AssetProcessor::new().process(assets)
 }
 
-struct AssetProcessor<'a> {
-    opts: &'a mut Options,
+struct AssetProcessor {
     pngs: PngAtlas,
     ttfs: TtfAtlas,
     chardata: BTreeMap<String, CharData>,
@@ -36,10 +34,9 @@ struct AssetProcessor<'a> {
     fontdata: BTreeMap<String, FontData>,
 }
 
-impl<'a> AssetProcessor<'a> {
-    pub fn new(opts: &'a mut Options) -> Self {
+impl AssetProcessor {
+    pub fn new() -> Self {
         Self {
-            opts,
             pngs: PngAtlas::new(),
             ttfs: TtfAtlas::new(),
             chardata: BTreeMap::new(),
@@ -70,7 +67,7 @@ impl<'a> AssetProcessor<'a> {
     }
 
     fn process_image(&mut self, name: String, image: RawImage) -> Result<()> {
-        let png = self.pngs.open(self.opts.input_path(&image.region.file))?;
+        let png = self.pngs.open(image.region.file.to_path_buf())?;
         let ImageRegion {
             position,
             size,
@@ -122,7 +119,7 @@ impl<'a> AssetProcessor<'a> {
     }
 
     fn process_mask(&mut self, name: String, mask: RawMask) -> Result<()> {
-        let png = self.pngs.open(self.opts.input_path(&mask.region.file))?;
+        let png = self.pngs.open(mask.region.file.to_path_buf())?;
         let ImageRegion {
             position,
             size,
@@ -159,7 +156,7 @@ impl<'a> AssetProcessor<'a> {
     }
 
     fn process_font(&mut self, name: String, font: RawFont) -> Result<()> {
-        let ttf = self.ttfs.open(self.opts.input_path(&font.file))?;
+        let ttf = self.ttfs.open(font.file.to_path_buf())?;
         let mut chars = vec![];
         for byte in 0u8..128u8 {
             let character = byte as char;

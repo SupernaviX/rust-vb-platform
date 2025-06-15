@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use png::{ColorType, Decoder, Transformations};
 use std::{
     collections::{BTreeMap, btree_map::Entry},
@@ -78,7 +78,8 @@ impl PngContents {
 }
 
 fn load_png_contents(path: &Path) -> Result<PngContents> {
-    let file = File::open(path)?;
+    let file = File::open(path)
+        .map_err(|e| anyhow!("could not read png from {}: {}", path.display(), e))?;
     let mut decoder = Decoder::new(file);
     decoder.set_transformations(Transformations::normalize_to_color8() | Transformations::ALPHA);
     let mut reader = decoder.read_info()?;

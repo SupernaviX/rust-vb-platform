@@ -68,7 +68,8 @@ pub struct CharacterData {
 }
 
 fn load_ttf_contents(path: &Path) -> Result<TtfContents> {
-    let bytes = fs::read(path)?;
+    let bytes =
+        fs::read(path).map_err(|e| anyhow!("could not read ttf from {}: {}", path.display(), e))?;
     let font = Font::from_bytes(bytes, FontSettings::default()).map_err(|e| anyhow!("{e}"))?;
 
     Ok(TtfContents { font })
