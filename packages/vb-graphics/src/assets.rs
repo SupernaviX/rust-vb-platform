@@ -3,7 +3,7 @@ use vb_rt::sys::vip;
 pub struct Image {
     pub width_cells: u8,
     pub height_cells: u8,
-    pub data: &'static [vip::BGCell],
+    pub data: &'static [vip::Cell],
 }
 
 impl Image {
@@ -30,6 +30,41 @@ impl Image {
             map.write_slice(src_data, dst_start);
         }
         (dst.0 as i16 * 8, dst.1 as i16 * 8)
+    }
+
+    pub fn render_to_objects(
+        &self,
+        end: usize,
+        dst: (i16, i16),
+        stereo: vip::ObjectStereo,
+    ) -> usize {
+        let mut index = end;
+        for y in 0..self.height_cells {
+            let dy = dst.1 + y as i16;
+            if dy <= -8 {
+                continue;
+            }
+            if dy >= 224 {
+                break;
+            }
+            for x in 0..self.width_cells {
+                let dx = dst.0 + x as i16;
+                if dx <= -8 {
+                    continue;
+                }
+                if dx >= 384 {
+                    break;
+                }
+                let obj = vip::OBJS.index(index);
+                let cell = self.data[y as usize * self.width_cells as usize + x as usize];
+                obj.jx().write(dx);
+                obj.stereo().write(stereo);
+                obj.jy().write(dy);
+                obj.cell().write(cell);
+                index -= 1;
+            }
+        }
+        index
     }
 }
 

@@ -37,7 +37,7 @@ pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
 
         writeln!(
             file,
-            "const {}_CELLS: [vb_rt::sys::vip::BGCell; {}] = vb_graphics::include_celldata!(\"{}\");",
+            "const {}_CELLS: [vb_rt::sys::vip::Cell; {}] = vb_graphics::include_celldata!(\"{}\");",
             rust_identifier(&image.name),
             cell_count,
             celldata_filename,

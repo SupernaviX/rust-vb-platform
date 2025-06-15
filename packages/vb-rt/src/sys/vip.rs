@@ -11,24 +11,32 @@ mmio! {
     pub const CHARACTER_HWS: [u16; 2048 * 8] = 0x00078000;
 }
 
+/// A description of a character and how to display it.
+/// Used to describe a single object, or part of a background.
 #[bitfield(u16)]
-pub struct BGCell {
+pub struct Cell {
     /// The index of the character to draw.
     #[bits(11)]
     pub character: u16,
     _pad: bool,
     /// If set, the character graphic will be reversed vertically.
-    pub bvflp: bool,
+    #[doc(alias = "bvflp")]
+    #[doc(alias = "jvflp")]
+    pub v_flip: bool,
     /// If set, the character graphic will be reversed horizontally.
-    pub bhflp: bool,
+    #[doc(alias = "bvflp")]
+    #[doc(alias = "jvflp")]
+    pub h_flip: bool,
     /// Specifies the palette index to use for this cell.
+    #[doc(alias = "gplts")]
+    #[doc(alias = "jplts")]
     #[bits(2)]
-    pub gplts: u8,
+    pub palette: u8,
 }
 
 mmio! {
-    pub const BG_CELLS: [BGCell; 64 * 64 * 16] = 0x00020000;
-    pub const BG_MAPS: [[BGCell; 64 * 64]; 16] = 0x00020000;
+    pub const BG_CELLS: [Cell; 64 * 64 * 16] = 0x00020000;
+    pub const BG_MAPS: [[Cell; 64 * 64]; 16] = 0x00020000;
 }
 
 /// Describes the contents of a world.
@@ -115,6 +123,38 @@ mmio! {
 }
 
 #[bitfield(u16)]
+pub struct ObjectStereo {
+    /// The signed parallax offset applied to the horizontal coordinate.
+    #[bits(10)]
+    pub jp: i16,
+    #[bits(4)]
+    _pad: u16,
+    /// If set, the object will be drawn to the right image.
+    pub jron: bool,
+    /// If set, the object will be drawn to the left image.
+    pub jlon: bool,
+}
+
+mmstruct! {
+    #[repr(C, align(4))]
+    #[derive(Clone, Copy)]
+    pub struct Object {
+        /// The signed horizontal coordinate of the left edge of the object from the left edge of the image.
+        pub jx: i16,
+        /// How to render the object in each eye.
+        pub stereo: ObjectStereo,
+        /// The vertical coordinate of the top edge of the object from the top edge of the image.
+        pub jy: i16,
+        /// The character to draw, and other information about how to draw it.
+        pub cell: Cell,
+    }
+}
+
+mmio! {
+    pub const OBJS: [Object; 1024] = 0x0003e000;
+}
+
+#[bitfield(u16)]
 pub struct InterruptFlags {
     /// The mirrors are not stable.
     pub scanerr: bool,
@@ -196,6 +236,7 @@ pub struct DrawingFlags {
     _pad0: u16,
     /// When read: the current group of 8 rows of pixels, relative to the top of the image, currently being drawn.
     /// When written: the group of 8 rows of pixels, relative to the top of the image, to compare to while drawing.
+    #[doc(alias = "sbcmp")]
     #[bits(5)]
     pub sbcount: u16,
     #[bits(2)]
@@ -207,6 +248,12 @@ pub struct DrawingFlags {
 mmio! {
     pub const XPSTTS: DrawingFlags = 0x0005f840;
     pub const XPCTRL: DrawingFlags = 0x0005f842;
+
+    pub const SPT: [u16; 4] = 0x0005f848;
+    pub const SPT0: u16 = 0x0005f848;
+    pub const SPT1: u16 = 0x0005f84a;
+    pub const SPT2: u16 = 0x0005f84c;
+    pub const SPT3: u16 = 0x0005f84e;
 }
 
 #[bitfield(u16)]
@@ -231,6 +278,10 @@ mmio! {
     pub const GPLT1: Palette = 0x0005f862;
     pub const GPLT2: Palette = 0x0005f864;
     pub const GPLT3: Palette = 0x0005f866;
-
+    pub const JPLT: [Palette; 4] = 0x0005f868;
+    pub const JPLT0: Palette = 0x0005f868;
+    pub const JPLT1: Palette = 0x0005f88a;
+    pub const JPLT2: Palette = 0x0005f88c;
+    pub const JPLT3: Palette = 0x0005f88e;
     pub const BKCOL: u16 = 0x0005f870;
 }

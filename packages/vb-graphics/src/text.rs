@@ -26,7 +26,7 @@ impl TextRenderer {
         for y in 0..self.chars.1 {
             for x in 0..self.chars.0 {
                 let character = self.chardata_start + (y * self.chars.0) + x;
-                let cell = vip::BGCell::new().with_character(character);
+                let cell = vip::Cell::new().with_character(character);
 
                 let dst_y = dst.1 as usize + y as usize;
                 let dst = (dst_y * 64) + (dst.0 as usize + x as usize);

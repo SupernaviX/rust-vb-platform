@@ -19,9 +19,13 @@ pub fn init_display() {
     vip::REST.write(0);
 
     vip::GPLT0.write(PALETTES[0]);
+    vip::JPLT0.write(PALETTES[0]);
     vip::GPLT1.write(PALETTES[1]);
+    vip::JPLT1.write(PALETTES[1]);
     vip::GPLT2.write(PALETTES[2]);
+    vip::JPLT2.write(PALETTES[2]);
     vip::GPLT3.write(PALETTES[3]);
+    vip::JPLT3.write(PALETTES[3]);
 
     while !vip::DPSTTS.read().scanrdy() {}
 
