@@ -226,6 +226,16 @@ pub struct Font {
     pub line_height: u16,
 }
 
+impl Font {
+    pub fn measure(&self, text: &[u8]) -> u16 {
+        let mut width = 0;
+        for char in text {
+            width += self.chars[*char as usize].width;
+        }
+        width
+    }
+}
+
 #[macro_export]
 #[cfg(windows)]
 macro_rules! path_sep {
