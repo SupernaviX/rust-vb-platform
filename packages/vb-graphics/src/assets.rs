@@ -32,15 +32,10 @@ impl Image {
         (dst.0 as i16 * 8, dst.1 as i16 * 8)
     }
 
-    pub fn render_to_objects(
-        &self,
-        end: usize,
-        dst: (i16, i16),
-        stereo: vip::ObjectStereo,
-    ) -> usize {
+    pub fn render_to_objects(&self, end: u16, dst: (i16, i16), stereo: vip::ObjectStereo) -> u16 {
         let mut index = end;
         for y in 0..self.height_cells {
-            let dy = dst.1 + y as i16;
+            let dy = dst.1 + (y as i16) * 8;
             if dy <= -8 {
                 continue;
             }
@@ -48,14 +43,14 @@ impl Image {
                 break;
             }
             for x in 0..self.width_cells {
-                let dx = dst.0 + x as i16;
+                let dx = dst.0 + (x as i16) * 8;
                 if dx <= -8 {
                     continue;
                 }
                 if dx >= 384 {
                     break;
                 }
-                let obj = vip::OBJS.index(index);
+                let obj = vip::OBJS.index(index as usize);
                 let cell = self.data[y as usize * self.width_cells as usize + x as usize];
                 obj.jx().write(dx);
                 obj.stereo().write(stereo);
