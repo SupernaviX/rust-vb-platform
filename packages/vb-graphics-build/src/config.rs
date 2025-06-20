@@ -72,9 +72,9 @@ pub struct RawImage {
     pub region: RawImageRegion,
 }
 impl RawImage {
-    fn fix_files(self, dir: &Path) -> Self {
+    fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
         Self {
-            region: self.region.fix_files(dir),
+            region: self.region.fix_files(opts, dir),
             ..self
         }
     }
@@ -86,9 +86,9 @@ pub struct RawMask {
     pub region: RawImageRegion,
 }
 impl RawMask {
-    fn fix_files(self, dir: &Path) -> Self {
+    fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
         Self {
-            region: self.region.fix_files(dir),
+            region: self.region.fix_files(opts, dir),
         }
     }
 }
@@ -108,9 +108,9 @@ pub struct RawImageRegion {
     pub size: Option<(usize, usize)>,
 }
 impl RawImageRegion {
-    fn fix_files(self, dir: &Path) -> Self {
+    fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
         Self {
-            file: dir.join(self.file),
+            file: opts.input_path(&dir.join(self.file)),
             ..self
         }
     }
@@ -122,9 +122,9 @@ pub struct RawFont {
     pub size: f32,
 }
 impl RawFont {
-    fn fix_files(self, dir: &Path) -> Self {
+    fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
         Self {
-            file: dir.join(self.file),
+            file: opts.input_path(&dir.join(self.file)),
             ..self
         }
     }
@@ -150,13 +150,13 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
         }
 
         for (name, font) in file.fonts {
-            assets.fonts.insert(name, font.fix_files(dir));
+            assets.fonts.insert(name, font.fix_files(opts, dir));
         }
         for (name, image) in file.images {
-            assets.images.insert(name, image.fix_files(dir));
+            assets.images.insert(name, image.fix_files(opts, dir));
         }
         for (name, mask) in file.masks {
-            assets.masks.insert(name, mask.fix_files(dir));
+            assets.masks.insert(name, mask.fix_files(opts, dir));
         }
     }
     Ok(assets)
