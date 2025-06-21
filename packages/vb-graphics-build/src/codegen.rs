@@ -18,7 +18,7 @@ pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
         writeln!(file, "#[allow(dead_code)]")?;
         writeln!(
             file,
-            "pub const {}: [vb_rt::sys::vip::Character; {}] = vb_graphics::include_chardata!(\"{}\");",
+            "pub static {}: [vb_rt::sys::vip::Character; {}] = vb_graphics::include_chardata!(\"{}\");",
             rust_identifier(&chardata.name),
             char_count,
             chardata_filename
@@ -37,7 +37,7 @@ pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
 
         writeln!(
             file,
-            "const {}_CELLS: [vb_rt::sys::vip::Cell; {}] = vb_graphics::include_celldata!(\"{}\");",
+            "static {}_CELLS: [vb_rt::sys::vip::Cell; {}] = vb_graphics::include_celldata!(\"{}\");",
             rust_identifier(&image.name),
             cell_count,
             celldata_filename,
@@ -109,7 +109,7 @@ pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
 
         writeln!(
             file,
-            "const {}_CHARDATA: [vb_graphics::FontCharacter; {}] = vb_graphics::include_fontdata!(\"{}\");",
+            "static {}_CHARDATA: [vb_graphics::FontCharacter; {}] = vb_graphics::include_fontdata!(\"{}\");",
             rust_identifier(&font.name),
             font.chars.len(),
             fontdata_filename,
