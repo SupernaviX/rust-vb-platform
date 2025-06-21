@@ -93,6 +93,10 @@ impl RawMask {
     }
 }
 
+const fn no_zoom() -> f64 {
+    1.0
+}
+
 #[derive(Deserialize, Debug)]
 pub struct RawImageRegion {
     pub file: PathBuf,
@@ -104,6 +108,8 @@ pub struct RawImageRegion {
     pub transpose: bool,
     #[serde(default)]
     pub rotate: usize,
+    #[serde(default = "no_zoom")]
+    pub scale: f64,
     pub position: Option<(isize, isize)>,
     pub size: Option<(usize, usize)>,
 }

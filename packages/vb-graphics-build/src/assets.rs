@@ -84,8 +84,9 @@ impl AssetProcessor {
             });
 
         let mut cells = vec![];
-        for cell_y in (0..size.1).step_by(8) {
-            for cell_x in (0..size.0).step_by(8) {
+        let (width, height) = view.size();
+        for cell_y in (0..height).step_by(8) {
+            for cell_x in (0..width).step_by(8) {
                 let mut shades = [[None; 8]; 8];
                 for (y, shade_row) in shades.iter_mut().enumerate() {
                     for (x, shade) in shade_row.iter_mut().enumerate() {
@@ -110,8 +111,8 @@ impl AssetProcessor {
             name.to_string(),
             ImageData {
                 name: name.to_string(),
-                width: size.0,
-                height: size.1,
+                width,
+                height,
                 cells,
             },
         );
@@ -128,8 +129,9 @@ impl AssetProcessor {
         let view = png.view(position, size, transform);
 
         let mut pixels = vec![];
-        for y in 0..size.1 {
-            for cell_x in (0..size.0).step_by(8) {
+        let (width, height) = view.size();
+        for y in 0..height {
+            for cell_x in (0..width).step_by(8) {
                 let mut collision_data = 0u8;
                 for x in 0..8 {
                     collision_data >>= 1;
@@ -146,8 +148,8 @@ impl AssetProcessor {
             name.to_string(),
             MaskData {
                 name: name.to_string(),
-                width: size.0,
-                height: size.1,
+                width,
+                height,
                 pixels,
             },
         );
@@ -238,16 +240,12 @@ impl AssetProcessor {
 fn parse_region(png: &PngContents, region: &RawImageRegion) -> Result<ImageRegion> {
     let position = region.position.unwrap_or_default();
     let size = region.size.unwrap_or(png.size);
-    let mut transform = Transform::default();
-    if region.hflip {
-        transform.h_flip = true;
-    }
-    if region.vflip {
-        transform.v_flip = true;
-    }
-    if region.transpose {
-        transform.transpose = true;
-    }
+    let mut transform = Transform {
+        h_flip: region.hflip,
+        v_flip: region.vflip,
+        transpose: region.transpose,
+        scale: region.scale,
+    };
     match region.rotate % 360 {
         0 => {}
         90 => {
@@ -403,11 +401,11 @@ fn flip_char(char: [u16; 8], h_flip: bool, v_flip: bool) -> [u16; 8] {
     result
 }
 
-#[derive(Default)]
 struct Transform {
     h_flip: bool,
     v_flip: bool,
     transpose: bool,
+    scale: f64,
 }
 
 #[bitfield(u16)]

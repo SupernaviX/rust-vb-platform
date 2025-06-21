@@ -68,6 +68,11 @@ impl PngContents {
         size: (usize, usize),
         transform: Transform,
     ) -> PngView {
+        let (width, height) = size;
+        let size = (
+            (width as f64 * transform.scale) as usize,
+            (height as f64 * transform.scale) as usize,
+        );
         PngView {
             png: self,
             position,
@@ -105,6 +110,9 @@ pub struct PngView<'a> {
 }
 
 impl PngView<'_> {
+    pub fn size(&self) -> (usize, usize) {
+        self.size
+    }
     pub fn get_pixel(&self, x: usize, y: usize) -> Option<Shade> {
         if x >= self.size.0 || y >= self.size.1 {
             return None;
@@ -119,6 +127,8 @@ impl PngView<'_> {
         if self.transform.transpose {
             std::mem::swap(&mut rel_x, &mut rel_y);
         }
+        rel_x = (rel_x as f64 / self.transform.scale) as usize;
+        rel_y = (rel_y as f64 / self.transform.scale) as usize;
         let real_x = self.position.0 + rel_x as isize;
         let real_y = self.position.1 + rel_y as isize;
         if real_x >= 0 && real_y >= 0 {
