@@ -166,12 +166,9 @@ impl AssetProcessor {
         }
 
         let width = chars.iter().map(|c| c.width).sum::<usize>();
-        let height = chars
-            .iter()
-            .map(|c| c.height as i32 - c.offset)
-            .max()
-            .unwrap() as usize;
-        let baseline = height as i32 + chars.iter().map(|c| c.offset).min().unwrap();
+        let baseline = chars.iter().map(|c| c.height).max().unwrap() as i32;
+        let min_offset = chars.iter().map(|c| c.offset).min().unwrap();
+        let height = (baseline - min_offset) as usize;
 
         let mut pixel_data = vec![0u8; width * height];
         let mut font_chars = Vec::with_capacity(chars.len());
