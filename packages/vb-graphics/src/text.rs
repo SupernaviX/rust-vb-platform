@@ -36,13 +36,30 @@ impl TextRenderer {
         (dst.0 as i16 * 8, dst.1 as i16 * 8)
     }
 
-    pub fn draw_text(&mut self, text: &[u8]) {
-        for char in text {
-            self.draw_char(*char);
+    pub fn clear(&mut self) {
+        for char in self.chardata_start..=(self.chardata_start + self.chars.0 * self.chars.1) {
+            vip::CHARACTERS
+                .index(char as usize)
+                .write(vip::Character([0; 8]));
         }
+        self.chardata_index = self.chardata_start;
+        self.char_offset = (0, 0);
     }
 
-    fn draw_char(&mut self, char: u8) {
+    pub fn is_empty(&self) -> bool {
+        self.chardata_index == self.chardata_start && self.char_offset == (0, 0)
+    }
+
+    pub fn draw_text(&mut self, text: &[u8]) -> bool {
+        for char in text {
+            if !self.draw_char(*char) {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn draw_char(&mut self, char: u8) -> bool {
         if char == b'\n' {
             let chardata_offset = self.chardata_index - self.chardata_start;
             self.chardata_index =
@@ -53,7 +70,7 @@ impl TextRenderer {
                 self.char_offset.1 -= 8;
                 self.chardata_index += self.chars.0;
             }
-            return;
+            return self.chardata_index < self.chardata_start + (self.chars.0 * self.chars.1);
         }
         let font_char_data = &self.font.chars[char as usize];
         let mut index = self.chardata_index;
@@ -69,13 +86,30 @@ impl TextRenderer {
             if dst_y == 8 {
                 dst_y = 0;
                 index += self.chars.0;
+                if index > (self.chardata_start + self.chars.0 * self.chars.1) {
+                    return false;
+                }
             }
         }
 
-        self.char_offset.0 += font_char_data.width as u8;
+        self.char_offset.0 += font_char_data.width as u8 + 1;
         while self.char_offset.0 >= 8 {
             self.char_offset.0 -= 8;
             self.chardata_index += 1;
+            if ((self.chardata_index - self.chardata_start) % self.chars.0) == 0 {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+impl core::fmt::Write for TextRenderer {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        if self.draw_text(s.as_bytes()) {
+            Ok(())
+        } else {
+            Err(core::fmt::Error)
         }
     }
 }

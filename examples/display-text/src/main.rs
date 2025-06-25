@@ -19,7 +19,7 @@ fn main() {
     gfx::set_colors(32, 64, 32);
     gfx::set_bkcol(0);
 
-    const TEXT_WIDTH_CHARS: u8 = 32;
+    const TEXT_WIDTH_CHARS: u8 = 34;
     const TEXT_HEIGHT_CHARS: u8 = 8;
 
     let mut renderer =
