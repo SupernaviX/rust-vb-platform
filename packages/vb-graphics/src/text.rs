@@ -76,6 +76,9 @@ impl TextRenderer {
         let mut index = self.chardata_index;
         let (dst_x, mut dst_y) = self.char_offset;
         for y in 0..font_char_data.height {
+            if index > (self.chardata_start + self.chars.0 * self.chars.1) {
+                return false;
+            }
             self.font.texture.render_row_to_chardata(
                 index,
                 (dst_x, dst_y),
@@ -86,9 +89,6 @@ impl TextRenderer {
             if dst_y == 8 {
                 dst_y = 0;
                 index += self.chars.0;
-                if index > (self.chardata_start + self.chars.0 * self.chars.1) {
-                    return false;
-                }
             }
         }
 
