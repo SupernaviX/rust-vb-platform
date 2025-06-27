@@ -50,8 +50,11 @@ impl Image {
                 if dx >= 384 {
                     break;
                 }
-                let obj = vip::OBJS.index(index as usize);
                 let cell = self.data[y as usize * self.width_cells as usize + x as usize];
+                if cell.character() == 0 {
+                    continue;
+                }
+                let obj = vip::OBJS.index(index as usize);
                 obj.jx().write(dx);
                 obj.stereo().write(stereo);
                 obj.jy().write(dy);
