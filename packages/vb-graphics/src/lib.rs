@@ -65,7 +65,7 @@ impl FrameMonitor {
     }
 
     pub fn enable_interrupts(&self) {
-        vip::INTENB.write(vip::InterruptFlags::new().with_rfbend(true));
+        vip::INTENB.write(vip::InterruptFlags::new().with_xpend(true));
         // clear tne NP flag in PSW so interrupts can fire
         unsafe { core::arch::asm!("ldsr r0, psw") };
     }
