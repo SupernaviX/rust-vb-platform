@@ -80,16 +80,21 @@ impl TextRenderer {
         let font_char_data = &self.font.chars[char as usize];
         let mut index = self.chardata_index;
         let (dst_x, mut dst_y) = self.char_offset;
-        for y in 0..font_char_data.height {
+        for y in 0..self.font.line_height {
             if index > (self.chardata_start + self.chars.0 * self.chars.1) {
-                return false;
+                if y < font_char_data.height {
+                    return false;
+                }
+            } else if y < font_char_data.height {
+                self.font.texture.render_row_to_chardata(
+                    index,
+                    (dst_x, dst_y),
+                    (font_char_data.x, font_char_data.y + y),
+                    font_char_data.width + 1,
+                );
+            } else {
+                erase_row(index, (dst_x, dst_y), font_char_data.width + 1);
             }
-            self.font.texture.render_row_to_chardata(
-                index,
-                (dst_x, dst_y),
-                (font_char_data.x, font_char_data.y + y),
-                font_char_data.width + 1,
-            );
             dst_y += 1;
             if dst_y == 8 {
                 dst_y = 0;
@@ -116,6 +121,35 @@ impl TextRenderer {
             counter: 0,
             inner: self,
         }
+    }
+}
+
+fn erase_row(index: u16, dst: (u8, u8), size: u16) {
+    let mut dst_addr = (index as usize * 8) + dst.1 as usize;
+    let mut remaining = size;
+    if remaining < 8 - dst.0 as u16 {
+        let mask = ((1 << (remaining as u8 + dst.0)) - 1) & !((1 << dst.0) - 1);
+        let dest = vip::CHARACTER_HWS.index(dst_addr);
+        dest.write(dest.read() & !mask);
+        return;
+    }
+    if dst.0 > 0 {
+        let mask = (1 << dst.0) - 1;
+        let dest = vip::CHARACTER_HWS.index(dst_addr);
+        dest.write(dest.read() & mask);
+        remaining -= 8 - dst.0 as u16;
+        dst_addr += 8;
+    }
+    while remaining > 8 {
+        let dest = vip::CHARACTER_HWS.index(dst_addr);
+        dest.write(0);
+        remaining -= 8;
+        dst_addr += 8;
+    }
+    if remaining > 0 {
+        let mask = (1 << remaining) - 1;
+        let dest = vip::CHARACTER_HWS.index(dst_addr);
+        dest.write(dest.read() & !mask);
     }
 }
 
