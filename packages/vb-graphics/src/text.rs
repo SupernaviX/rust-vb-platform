@@ -1,3 +1,4 @@
+use arrayvec::ArrayVec;
 use vb_rt::sys::vip;
 
 use crate::Font;
@@ -36,12 +37,16 @@ impl TextRenderer {
         (dst.0 as i16 * 8, dst.1 as i16 * 8)
     }
 
-    pub fn clear(&mut self) {
-        for char in self.chardata_start..=(self.chardata_start + self.chars.0 * self.chars.1) {
-            vip::CHARACTERS
-                .index(char as usize)
-                .write(vip::Character([0; 8]));
+    pub fn width(&self) -> i16 {
+        let chars_drawn = self.chardata_index - self.chardata_start;
+        if chars_drawn > self.chars.0 {
+            self.chars.0 as i16 * 8
+        } else {
+            chars_drawn as i16 * 8 + self.char_offset.0 as i16
         }
+    }
+
+    pub fn clear(&mut self) {
         self.chardata_index = self.chardata_start;
         self.char_offset = (0, 0);
     }
@@ -83,7 +88,7 @@ impl TextRenderer {
                 index,
                 (dst_x, dst_y),
                 (font_char_data.x, font_char_data.y + y),
-                font_char_data.width,
+                font_char_data.width + 1,
             );
             dst_y += 1;
             if dst_y == 8 {
@@ -102,9 +107,79 @@ impl TextRenderer {
         }
         true
     }
+
+    pub fn buffered<const N: usize>(self, delay: u8) -> BufferedTextRenderer<N> {
+        BufferedTextRenderer {
+            buffer: ArrayVec::new(),
+            buffer_index: 0,
+            delay,
+            counter: 0,
+            inner: self,
+        }
+    }
 }
 
 impl core::fmt::Write for TextRenderer {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        if self.draw_text(s.as_bytes()) {
+            Ok(())
+        } else {
+            Err(core::fmt::Error)
+        }
+    }
+}
+
+pub struct BufferedTextRenderer<const N: usize> {
+    buffer: ArrayVec<u8, N>,
+    buffer_index: usize,
+    delay: u8,
+    counter: u8,
+    pub inner: TextRenderer,
+}
+
+impl<const N: usize> BufferedTextRenderer<N> {
+    pub fn render_to_bgmap(&self, index: u8, dst: (u8, u8)) -> (i16, i16) {
+        self.inner.render_to_bgmap(index, dst)
+    }
+
+    pub fn clear(&mut self) {
+        self.buffer.clear();
+        self.buffer_index = 0;
+        self.counter = self.delay;
+        self.inner.clear();
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.buffer_index == self.buffer.len() && self.inner.is_empty()
+    }
+
+    pub fn width(&self) -> i16 {
+        self.inner.width()
+    }
+
+    pub fn draw_text(&mut self, text: &[u8]) -> bool {
+        if self.buffer.remaining_capacity() < text.len() {
+            return false;
+        }
+        self.buffer.extend(text.iter().copied());
+        true
+    }
+
+    pub fn update(&mut self) {
+        if self.buffer_index == self.buffer.len() {
+            return;
+        }
+        if self.counter < self.delay {
+            self.counter += 1;
+        } else {
+            self.counter = 0;
+            self.inner.draw_char(self.buffer[self.buffer_index]);
+            self.buffer_index += 1;
+        }
+    }
+}
+
+impl<const N: usize> core::fmt::Write for BufferedTextRenderer<N> {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         if self.draw_text(s.as_bytes()) {
             Ok(())

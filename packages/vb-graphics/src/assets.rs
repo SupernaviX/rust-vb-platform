@@ -202,7 +202,7 @@ impl<'a> Iterator for TextureRowIter<'a> {
 
         let remaining_shift = 16 - pixels_used * 2;
         data >>= remaining_shift;
-        mask = (mask >> remaining_shift) | !(u16::MAX >> remaining_shift);
+        mask >>= remaining_shift;
 
         Some(TextureCell { data, mask })
     }

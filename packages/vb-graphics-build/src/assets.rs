@@ -165,7 +165,7 @@ impl AssetProcessor {
             chars.push(ttf.rasterize(character, font.size));
         }
 
-        let width = chars.iter().map(|c| c.width).sum::<usize>();
+        let width = chars.iter().map(|c| c.width).sum::<usize>() + chars.len();
         let baseline = chars.iter().map(|c| c.height).max().unwrap() as i32;
         let min_offset = chars.iter().map(|c| c.offset).min().unwrap();
         let height = (baseline - min_offset) as usize;
@@ -195,7 +195,7 @@ impl AssetProcessor {
                 width: char.width as u16,
                 height: (baseline - char.offset) as u16,
             });
-            current_x += char.width;
+            current_x += char.width + 1;
         }
 
         let mut pixels = Vec::with_capacity(width.div_ceil(4) * height);
