@@ -191,6 +191,10 @@ impl<const N: usize> BufferedTextRenderer<N> {
         self.inner.width()
     }
 
+    pub fn final_width(&self) -> i16 {
+        self.width() + self.inner.font.measure(&self.buffer[self.buffer_index..]) as i16
+    }
+
     pub fn draw_text(&mut self, text: &[u8]) -> bool {
         if self.buffer.remaining_capacity() < text.len() {
             return false;

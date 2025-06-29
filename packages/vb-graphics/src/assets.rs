@@ -233,7 +233,7 @@ impl Font {
     pub fn measure(&self, text: &[u8]) -> u16 {
         let mut width = 0;
         for char in text {
-            width += self.chars[*char as usize].width;
+            width += self.chars[*char as usize].width + 1;
         }
         width
     }
