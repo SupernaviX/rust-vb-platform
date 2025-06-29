@@ -203,16 +203,17 @@ impl<const N: usize> BufferedTextRenderer<N> {
         true
     }
 
-    pub fn update(&mut self) {
-        if self.buffer_index == self.buffer.len() {
-            return;
-        }
+    pub fn update(&mut self) -> bool {
         if self.counter < self.delay {
             self.counter += 1;
+            false
+        } else if self.buffer_index == self.buffer.len() {
+            true
         } else {
             self.counter = 0;
             self.inner.draw_char(self.buffer[self.buffer_index]);
             self.buffer_index += 1;
+            false
         }
     }
 }
