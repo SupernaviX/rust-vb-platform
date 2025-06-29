@@ -128,13 +128,13 @@ fn erase_row(index: u16, dst: (u8, u8), size: u16) {
     let mut dst_addr = (index as usize * 8) + dst.1 as usize;
     let mut remaining = size;
     if remaining < 8 - dst.0 as u16 {
-        let mask = ((1 << (remaining as u8 + dst.0)) - 1) & !((1 << dst.0) - 1);
+        let mask = ((1 << ((remaining as u8 + dst.0) * 2)) - 1) & !((1 << (dst.0 * 2)) - 1);
         let dest = vip::CHARACTER_HWS.index(dst_addr);
         dest.write(dest.read() & !mask);
         return;
     }
     if dst.0 > 0 {
-        let mask = (1 << dst.0) - 1;
+        let mask = (1 << (dst.0 * 2)) - 1;
         let dest = vip::CHARACTER_HWS.index(dst_addr);
         dest.write(dest.read() & mask);
         remaining -= 8 - dst.0 as u16;
@@ -147,7 +147,7 @@ fn erase_row(index: u16, dst: (u8, u8), size: u16) {
         dst_addr += 8;
     }
     if remaining > 0 {
-        let mask = (1 << remaining) - 1;
+        let mask = (1 << (remaining * 2)) - 1;
         let dest = vip::CHARACTER_HWS.index(dst_addr);
         dest.write(dest.read() & !mask);
     }
