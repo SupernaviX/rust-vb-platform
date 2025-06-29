@@ -35,7 +35,21 @@ impl<T: Copy> VolatilePointer<T> {
     }
 }
 
+impl<T> core::fmt::Debug for VolatilePointer<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_fmt(format_args!("0x{:08x}", self.0.addr()))
+    }
+}
+
 impl<T: Copy, const N: usize> VolatilePointer<[T; N]> {
+    pub fn read_slice(self, slice: &mut [T], start: usize) {
+        assert!(start + slice.len() <= N);
+        let offsets = start..start + slice.len();
+        for (dst, offset) in slice.iter_mut().zip(offsets) {
+            *dst = unsafe { self.0.cast::<T>().add(offset).read_volatile() };
+        }
+    }
+
     pub fn write_slice(self, slice: &[T], start: usize) {
         assert!(start + slice.len() <= N);
         for (src, offset) in slice.iter().zip(start..start + slice.len()) {
