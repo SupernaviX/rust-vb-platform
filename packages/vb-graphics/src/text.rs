@@ -140,7 +140,7 @@ fn erase_row(index: u16, dst: (u8, u8), size: u16) {
         remaining -= 8 - dst.0 as u16;
         dst_addr += 8;
     }
-    while remaining > 8 {
+    while remaining >= 8 {
         let dest = vip::CHARACTER_HWS.index(dst_addr);
         dest.write(0);
         remaining -= 8;
