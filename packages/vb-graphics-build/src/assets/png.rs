@@ -119,10 +119,10 @@ impl PngView<'_> {
         }
         let (mut rel_x, mut rel_y) = (x, y);
         if self.transform.h_flip {
-            rel_x = self.size.0 - rel_x;
+            rel_x = self.size.0 - rel_x - 1;
         }
         if self.transform.v_flip {
-            rel_y = self.size.1 - rel_y;
+            rel_y = self.size.1 - rel_y - 1;
         }
         if self.transform.transpose {
             std::mem::swap(&mut rel_x, &mut rel_y);
