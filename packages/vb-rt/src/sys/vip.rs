@@ -280,8 +280,8 @@ mmio! {
     pub const GPLT3: Palette = 0x0005f866;
     pub const JPLT: [Palette; 4] = 0x0005f868;
     pub const JPLT0: Palette = 0x0005f868;
-    pub const JPLT1: Palette = 0x0005f88a;
-    pub const JPLT2: Palette = 0x0005f88c;
-    pub const JPLT3: Palette = 0x0005f88e;
+    pub const JPLT1: Palette = 0x0005f86a;
+    pub const JPLT2: Palette = 0x0005f86c;
+    pub const JPLT3: Palette = 0x0005f86e;
     pub const BKCOL: u16 = 0x0005f870;
 }
