@@ -5,7 +5,7 @@ pub mod sram;
 pub mod vip;
 mod volatile;
 
-pub use volatile::VolatilePointer;
+pub use volatile::{OveralignedVolatilePointer, VolatilePointer};
 
 /// Enable interrupts
 #[inline(always)]

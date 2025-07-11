@@ -18,7 +18,7 @@ impl<T: Copy> VolatilePointer<T> {
     /// # Safety
     ///
     /// The given offset must point to a field of the given type.
-    pub const unsafe fn field<U: Copy>(self, offset: usize) -> VolatilePointer<U> {
+    pub(crate) const unsafe fn field<U: Copy>(self, offset: usize) -> VolatilePointer<U> {
         assert!(offset < size_of::<T>());
         let inner = unsafe { self.0.cast::<u8>().add(offset) }.cast::<U>();
         VolatilePointer(inner)
@@ -63,12 +63,71 @@ impl<T: Copy, const N: usize> VolatilePointer<[T; N]> {
     }
 }
 
+/**
+Some MMIO regions (SRAM, waveforms) are only writable at specific alignments.
+This pointer lets you interact with them as if they were a contiguous address space.
+*/
+#[repr(transparent)]
+#[derive(Clone, Copy)]
+pub struct OveralignedVolatilePointer<T, const A: usize>(VolatilePointer<T>);
+
+impl<T, const A: usize> core::fmt::Debug for OveralignedVolatilePointer<T, A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl<const N: usize, const A: usize> OveralignedVolatilePointer<[u8; N], A> {
+    /// Construct a new volatile pointer from an address.
+    ///
+    /// # Safety
+    ///
+    /// The given address must be valid for reads and writes.
+    pub const unsafe fn from_address(address: usize) -> Self {
+        Self(unsafe { VolatilePointer::from_address(address) })
+    }
+
+    pub fn read_slice(self, slice: &mut [u8], start: usize) {
+        assert!(start + slice.len() < N);
+        let offsets = start..start + slice.len();
+        for (dst, offset) in slice.iter_mut().zip(offsets) {
+            let src: VolatilePointer<u8> = unsafe { self.0.field(offset * A) };
+            *dst = src.read();
+        }
+    }
+
+    pub fn write_slice(self, slice: &[u8], start: usize) {
+        assert!(start + slice.len() <= N);
+        for (src, offset) in slice.iter().zip(start..start + slice.len()) {
+            let dst: VolatilePointer<u8> = unsafe { self.0.field(offset * A) };
+            dst.write(*src);
+        }
+    }
+
+    pub const fn index(self, index: usize) -> VolatilePointer<u8> {
+        assert!(index < N);
+        unsafe { self.0.field(index * A) }
+    }
+}
+
 macro_rules! mmio {
     () => {};
-    (pub const $name:ident: $type:ty = $address:literal; $($rest:tt)*) => {
-        pub const $name: $crate::sys::VolatilePointer<$type> = unsafe { $crate::sys::VolatilePointer::from_address($address) };
+    (
+        $(#[$ptr_attr:meta])*
+        $ptr_vis:vis const $name:ident: $type:ty = $address:literal; $($rest:tt)*
+    ) => {
+        $(#[$ptr_attr])*
+        $ptr_vis const $name: $crate::sys::VolatilePointer<$type> = unsafe { $crate::sys::VolatilePointer::from_address($address) };
         mmio!($($rest)*);
     };
+    (
+        $(#[$ptr_attr:meta])*
+        $ptr_vis:vis const $name:ident: $type:ty, align $align:literal = $address:literal; $($rest:tt)*
+    ) => {
+        $(#[$ptr_attr])*
+        $ptr_vis const $name: $crate::sys::OveralignedVolatilePointer<$type, $align> = unsafe { $crate::sys::OveralignedVolatilePointer::from_address($address) };
+        mmio!($($rest)*);
+    }
 }
 pub(crate) use mmio;
 
