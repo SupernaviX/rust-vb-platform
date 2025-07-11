@@ -1,4 +1,5 @@
 #![no_std]
+#![feature(macro_metavar_expr_concat)]
 
 mod builtins;
 pub mod macros;
