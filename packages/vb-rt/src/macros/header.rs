@@ -2,6 +2,7 @@
 macro_rules! rom_header {
     ($game_title:expr, $maker_code:expr, $game_code:expr) => {
         #[unsafe(link_section = ".rom_header")]
+        #[used]
         pub static ROM_HEADER: [u8; 32] =
             vb_rt::macros::header::rom_header($game_title, $maker_code, $game_code);
     };
