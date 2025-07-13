@@ -9,33 +9,33 @@ use fontdue::{Font, FontSettings};
 
 use crate::assets::Shade;
 
-pub struct TtfAtlas {
-    files: BTreeMap<PathBuf, TtfContents>,
+pub struct FontAtlas {
+    files: BTreeMap<PathBuf, FontContents>,
 }
 
-impl TtfAtlas {
+impl FontAtlas {
     pub fn new() -> Self {
         Self {
             files: BTreeMap::new(),
         }
     }
 
-    pub fn open(&mut self, full_path: PathBuf) -> Result<&TtfContents> {
+    pub fn open(&mut self, full_path: PathBuf) -> Result<&FontContents> {
         match self.files.entry(full_path) {
             Entry::Occupied(e) => Ok(e.into_mut()),
             Entry::Vacant(e) => {
-                let contents = load_ttf_contents(e.key())?;
+                let contents = load_font_contents(e.key())?;
                 Ok(e.insert(contents))
             }
         }
     }
 }
 
-pub struct TtfContents {
+pub struct FontContents {
     font: Font,
 }
 
-impl TtfContents {
+impl FontContents {
     pub fn rasterize(&self, character: char, px: f32) -> CharacterData {
         let (metrics, data) = self.font.rasterize(character, px);
         let pixels = data
@@ -67,10 +67,10 @@ pub struct CharacterData {
     pub pixels: Vec<Shade>,
 }
 
-fn load_ttf_contents(path: &Path) -> Result<TtfContents> {
-    let bytes =
-        fs::read(path).map_err(|e| anyhow!("could not read ttf from {}: {}", path.display(), e))?;
+fn load_font_contents(path: &Path) -> Result<FontContents> {
+    let bytes = fs::read(path)
+        .map_err(|e| anyhow!("could not read font from {}: {}", path.display(), e))?;
     let font = Font::from_bytes(bytes, FontSettings::default()).map_err(|e| anyhow!("{e}"))?;
 
-    Ok(TtfContents { font })
+    Ok(FontContents { font })
 }

@@ -1,10 +1,10 @@
+mod font;
 mod png;
-mod ttf;
 
 use std::collections::BTreeMap;
 
 use crate::{
-    assets::{png::PngContents, ttf::TtfAtlas},
+    assets::{font::FontAtlas, png::PngContents},
     config::{RawAssets, RawFont, RawImage, RawImageRegion, RawMask},
 };
 use anyhow::{Result, bail};
@@ -26,7 +26,7 @@ pub fn process(assets: RawAssets) -> Result<Assets> {
 
 struct AssetProcessor {
     pngs: PngAtlas,
-    ttfs: TtfAtlas,
+    fonts: FontAtlas,
     chardata: BTreeMap<String, CharData>,
     imagedata: BTreeMap<String, ImageData>,
     maskdata: BTreeMap<String, MaskData>,
@@ -38,7 +38,7 @@ impl AssetProcessor {
     pub fn new() -> Self {
         Self {
             pngs: PngAtlas::new(),
-            ttfs: TtfAtlas::new(),
+            fonts: FontAtlas::new(),
             chardata: BTreeMap::new(),
             imagedata: BTreeMap::new(),
             maskdata: BTreeMap::new(),
@@ -158,11 +158,11 @@ impl AssetProcessor {
     }
 
     fn process_font(&mut self, name: String, font: RawFont) -> Result<()> {
-        let ttf = self.ttfs.open(font.file.to_path_buf())?;
+        let contents = self.fonts.open(font.file.to_path_buf())?;
         let mut chars = vec![];
         for byte in 0u8..128u8 {
             let character = byte as char;
-            chars.push(ttf.rasterize(character, font.size));
+            chars.push(contents.rasterize(character, font.size));
         }
 
         let width = chars.iter().map(|c| c.width).sum::<usize>() + chars.len();
