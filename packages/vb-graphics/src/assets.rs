@@ -217,7 +217,7 @@ struct TextureCell {
 #[derive(Debug)]
 pub struct FontCharacter {
     pub x: u16,
-    pub y: u16,
+    pub y_offset: u16,
     pub width: u16,
     pub height: u16,
 }

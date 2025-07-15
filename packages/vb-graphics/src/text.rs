@@ -80,16 +80,18 @@ impl TextRenderer {
         let font_char_data = &self.font.chars[char as usize];
         let mut index = self.chardata_index;
         let (dst_x, mut dst_y) = self.char_offset;
+        let y_top = font_char_data.y_offset;
+        let y_bottom = y_top + font_char_data.height;
         for y in 0..self.font.line_height {
             if index > (self.chardata_start + self.chars.0 * self.chars.1) {
-                if y < font_char_data.height {
+                if y < y_bottom {
                     return false;
                 }
-            } else if y < font_char_data.height {
+            } else if y >= y_top && y < y_bottom {
                 self.font.texture.render_row_to_chardata(
                     index,
                     (dst_x, dst_y),
-                    (font_char_data.x, font_char_data.y + y),
+                    (font_char_data.x, y - y_top),
                     font_char_data.width + 1,
                 );
             } else {

@@ -166,9 +166,12 @@ impl AssetProcessor {
         }
 
         let width = chars.iter().map(|c| c.width).sum::<usize>() + chars.len();
-        let baseline = chars.iter().map(|c| c.height).max().unwrap() as i32;
-        let min_offset = chars.iter().map(|c| c.offset).min().unwrap();
-        let height = (baseline - min_offset) as usize;
+        let height = chars.iter().map(|c| c.height).max().unwrap();
+        let baseline = chars
+            .iter()
+            .map(|c| (c.height as i32) + c.offset)
+            .max()
+            .unwrap();
 
         let mut pixel_data = vec![0u8; width * height];
         let mut font_chars = Vec::with_capacity(chars.len());
@@ -178,7 +181,7 @@ impl AssetProcessor {
             for y in 0..char.height {
                 let src_start = y * char.width;
                 let src_row = &char.pixels[src_start..src_start + char.width];
-                let dst_start = (y_offset + y) * width + current_x;
+                let dst_start = y * width + current_x;
                 let dst_row = &mut pixel_data[dst_start..dst_start + char.width];
                 for (dst, src) in dst_row.iter_mut().zip(src_row) {
                     *dst = match src {
@@ -191,9 +194,9 @@ impl AssetProcessor {
             }
             font_chars.push(FontCharacterData {
                 x: current_x as u16,
-                y: 0,
+                y_offset: y_offset as u16,
                 width: char.width as u16,
-                height: (baseline - char.offset) as u16,
+                height: char.height as u16,
             });
             current_x += char.width + 1;
         }
@@ -366,7 +369,7 @@ pub struct FontData {
 }
 pub struct FontCharacterData {
     pub x: u16,
-    pub y: u16,
+    pub y_offset: u16,
     pub width: u16,
     pub height: u16,
 }
@@ -374,7 +377,7 @@ impl FontCharacterData {
     pub fn as_bytes(&self) -> [u8; 8] {
         let mut result = [0; 8];
         result[0..2].copy_from_slice(&self.x.to_le_bytes());
-        result[2..4].copy_from_slice(&self.y.to_le_bytes());
+        result[2..4].copy_from_slice(&self.y_offset.to_le_bytes());
         result[4..6].copy_from_slice(&self.width.to_le_bytes());
         result[6..8].copy_from_slice(&self.height.to_le_bytes());
         result
