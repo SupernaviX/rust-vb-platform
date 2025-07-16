@@ -200,6 +200,11 @@ impl AssetProcessor {
             });
             current_x += char.width + 1;
         }
+        let line_height = font_chars
+            .iter()
+            .map(|c| c.y_offset + c.height)
+            .max()
+            .unwrap();
 
         let mut pixels = Vec::with_capacity(width.div_ceil(4) * height);
         for y in 0..height {
@@ -228,7 +233,7 @@ impl AssetProcessor {
             FontData {
                 name,
                 texture_name,
-                line_height: height as u16,
+                line_height,
                 chars: font_chars,
             },
         );
