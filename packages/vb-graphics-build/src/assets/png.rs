@@ -143,8 +143,8 @@ impl PngView<'_> {
     }
 
     fn get_max_pixel(&self, x: usize, y: usize, scale: f64) -> Option<Shade> {
-        let y_target = (y as f64 + scale).round() as usize;
-        let x_target = (x as f64 + scale).round() as usize;
+        let y_target = (y as f64 + scale).ceil() as usize;
+        let x_target = (x as f64 + scale).ceil() as usize;
         let mut shade = None;
         for y in y..y_target {
             for x in x..x_target {
