@@ -11,13 +11,13 @@ use anyhow::{Result, bail};
 use bitfield_struct::bitfield;
 use png::PngAtlas;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Shade {
     Transparent,
-    Black,
     Shade1,
     Shade2,
     Shade3,
+    Black,
 }
 
 pub fn process(assets: RawAssets) -> Result<Assets> {

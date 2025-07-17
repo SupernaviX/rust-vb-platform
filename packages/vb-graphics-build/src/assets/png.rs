@@ -132,10 +132,26 @@ impl PngView<'_> {
         let real_x = self.position.0 + rel_x as isize;
         let real_y = self.position.1 + rel_y as isize;
         if real_x >= 0 && real_y >= 0 {
-            self.png.get_pixel(real_x as usize, real_y as usize)
+            if self.transform.scale < 1.0 {
+                self.get_max_pixel(real_x as usize, real_y as usize, 1.0 / self.transform.scale)
+            } else {
+                self.png.get_pixel(real_x as usize, real_y as usize)
+            }
         } else {
             None
         }
+    }
+
+    fn get_max_pixel(&self, x: usize, y: usize, scale: f64) -> Option<Shade> {
+        let y_target = (y as f64 + scale).round() as usize;
+        let x_target = (x as f64 + scale).round() as usize;
+        let mut shade = None;
+        for y in y..y_target {
+            for x in x..x_target {
+                shade = shade.max(self.png.get_pixel(x, y));
+            }
+        }
+        shade
     }
 }
 
