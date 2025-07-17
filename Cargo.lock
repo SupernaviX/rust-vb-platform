@@ -359,6 +359,7 @@ name = "vb-rt"
 version = "0.1.0"
 dependencies = [
  "bitfield-struct",
+ "fixed",
 ]
 
 [[package]]

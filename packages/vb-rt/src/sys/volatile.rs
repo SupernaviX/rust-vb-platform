@@ -140,16 +140,26 @@ macro_rules! mmio {
     () => {};
     (
         $(#[$ptr_attr:meta])*
-        $ptr_vis:vis const $name:ident: $type:ty = $address:literal; $($rest:tt)*
+        $ptr_vis:vis const $name:ident: $type:ty = $address:literal $(, size = $size:literal)?; $($rest:tt)*
     ) => {
+        $(
+            const _: () = {
+                assert!(core::mem::size_of::<$type>() == $size);
+            };
+        )?
         $(#[$ptr_attr])*
         $ptr_vis const $name: $crate::sys::VolatilePointer<$type> = unsafe { $crate::sys::VolatilePointer::<$type>::from_address($address) };
         mmio!($($rest)*);
     };
     (
         $(#[$ptr_attr:meta])*
-        $ptr_vis:vis const $name:ident: $type:ty, align $align:literal = $address:literal; $($rest:tt)*
+        $ptr_vis:vis const $name:ident: $type:ty = $address:literal $(, size = $size:literal)?, align $align:literal; $($rest:tt)*
     ) => {
+        $(
+            const _: () = {
+                assert!(core::mem::size_of::<$type>() == $size);
+            };
+        )?
         $(#[$ptr_attr])*
         $ptr_vis const $name: $crate::sys::OveralignedVolatilePointer<$type, $align> = unsafe { $crate::sys::OveralignedVolatilePointer::<$type, $align>::from_address($address) };
         mmio!($($rest)*);

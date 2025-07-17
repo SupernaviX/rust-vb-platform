@@ -34,9 +34,36 @@ pub struct Cell {
     pub palette: u8,
 }
 
+mmstruct! {
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct HBiasElement {
+        /// The signed horizontal offset to apply to the row of pixels for the left eye.
+        pub hofstl: i16,
+        /// The signed horizontal offset to apply to the row of pixels for the right eye.
+        pub hofstr: i16,
+    }
+}
+
+mmstruct! {
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct AffineElement {
+        pub mx: fixed::types::I13F3,
+        pub mp: i16,
+        pub my: fixed::types::I13F3,
+        pub dx: fixed::types::I7F9,
+        pub dy: fixed::types::I7F9,
+        _padding: [i16; 3],
+    }
+}
+
 mmio! {
-    pub const BG_CELLS: [Cell; 64 * 64 * 16] = 0x00020000;
-    pub const BG_MAPS: [[Cell; 64 * 64]; 16] = 0x00020000;
+    pub const BG_CELLS: [Cell; 64 * 64 * 16] = 0x00020000, size = 0x20000;
+    pub const BG_MAPS: [[Cell; 64 * 64]; 16] = 0x00020000, size = 0x20000;
+    pub const HBIAS: [HBiasElement; 0x7600] = 0x00020000, size = 0x1d800;
+    pub const AFFINE: [AffineElement; 0x1d80] = 0x00020000, size = 0x1d800;
+    pub const WORLD_PARAMS: [u16; 0xec00] = 0x00020000, size = 0x1d800;
 }
 
 /// Describes the contents of a world.
