@@ -49,6 +49,12 @@ impl TextRenderer {
     pub fn clear(&mut self) {
         self.chardata_index = self.chardata_start;
         self.char_offset = (0, 0);
+        for char_y in 0..self.chars.1 {
+            let index = self.chardata_start + (char_y * self.chars.0);
+            for row in 0..8 {
+                erase_row(index, (0, row), self.chars.0 * 8);
+            }
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -94,8 +100,6 @@ impl TextRenderer {
                     (font_char_data.x, y - y_top),
                     font_char_data.width + 1,
                 );
-            } else {
-                erase_row(index, (dst_x, dst_y), font_char_data.width + 1);
             }
             dst_y += 1;
             if dst_y == 8 {
