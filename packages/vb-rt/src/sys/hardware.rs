@@ -77,17 +77,12 @@ mmio! {
 
 // utility for reading controller data
 pub fn read_controller() -> GamePadData {
-    SCR.write(SerialControlData::new().with_para_si(true));
-    for _ in 0..16 {
-        // dummy operation to slow things down
-        unsafe {
-            core::arch::asm!("mpyhw r0, r0", "mpyhw r0, r0");
-        };
-        // send a 0 to the controller
-        SCR.write(SerialControlData::new().with_soft_ck(true));
-        // send a 1 to the controller
-        SCR.write(SerialControlData::new().with_soft_ck(false));
-    }
+    SCR.write(
+        SerialControlData::new()
+            .with_k_int_inh(true)
+            .with_hw_si(true),
+    );
+    while SCR.read().si_stat() {}
     let lo: u8 = SDLR.read().into();
     let hi: u8 = SDHR.read().into();
     GamePadData::from((lo as u16) | ((hi as u16) << 8))
