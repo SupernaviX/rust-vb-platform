@@ -50,6 +50,16 @@ impl<T: Copy, const N: usize> VolatilePointer<[T; N]> {
         }
     }
 
+    pub fn read_array<const M: usize>(self, start: usize) -> [T; M] {
+        assert!(start + M <= N);
+        let mut array = [core::mem::MaybeUninit::uninit(); M];
+        for (offset, dst) in array.iter_mut().enumerate() {
+            dst.write(unsafe { self.0.cast::<T>().add(offset).read_volatile() });
+        }
+        // SAFETY: we loaded every value
+        unsafe { core::mem::transmute_copy(&array) }
+    }
+
     pub fn write_slice(self, slice: &[T], start: usize) {
         assert!(start + slice.len() <= N);
         for (src, offset) in slice.iter().zip(start..start + slice.len()) {
@@ -97,6 +107,16 @@ macro_rules! impl_overaligned_volatile_pointer {
                     let src: VolatilePointer<$typ> = unsafe { self.0.field(offset * A) };
                     *dst = src.read();
                 }
+            }
+
+            pub fn read_array<const M: usize>(self, start: usize) -> [$typ; M] {
+                assert!(start + M <= N);
+                let mut array = [core::mem::MaybeUninit::<$typ>::uninit(); M];
+                for (offset, dst) in array.iter_mut().enumerate() {
+                    dst.write(unsafe { self.0.field(offset * A).read() });
+                }
+                // SAFETY: we loaded every value
+                unsafe { core::mem::transmute_copy(&array) }
             }
 
             pub fn write_slice(self, slice: &[$typ], start: usize) {
