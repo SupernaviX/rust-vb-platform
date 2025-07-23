@@ -1,4 +1,7 @@
 #[macro_export]
+/// Define the ROM header for your game.
+/// It should include a <=20 character game tile, a 4 character maker code, and a 2 character game code.
+/// Try to choose something unique.
 macro_rules! rom_header {
     ($game_title:expr, $maker_code:expr, $game_code:expr) => {
         #[unsafe(link_section = ".rom_header")]

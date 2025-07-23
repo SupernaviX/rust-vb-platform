@@ -22,11 +22,13 @@ macro_rules! handler {
     }
 }
 
-macro_rules! interrupt_handler {
-    ($handler:ident, $macro:ident) => {
+macro_rules! in2rupt_handlers{
+    () => {};
+    ($(#[$attr:meta])* $macro:ident($handler:ident); $($rest:tt)*) => {
         handler!($handler);
 
         #[macro_export]
+        $(#[$attr])*
         macro_rules! $macro {
             ($body:block) => {
                 #[interrupt]
@@ -36,6 +38,7 @@ macro_rules! interrupt_handler {
                 }
             };
         }
+        in2rupt_handlers!($($rest)*);
     };
 }
 
@@ -43,28 +46,43 @@ macro_rules! interrupt_handler {
 #[unsafe(no_mangle)]
 pub fn default_handler() {}
 
-interrupt_handler!(_vb_rt_game_pad_handler, game_pad_interrupt_handler);
-interrupt_handler!(_vb_rt_timer_handler, timer_interrupt_handler);
-interrupt_handler!(_vb_rt_game_pak_handler, game_pak_interrupt_handler);
-interrupt_handler!(
-    _vb_rt_communication_handler,
-    communication_interrupt_handler
-);
-interrupt_handler!(_vb_rt_vip_handler, vip_interrupt_handler);
-interrupt_handler!(_vb_rt_fp_exception_handler, fp_exception_handler);
-interrupt_handler!(
-    _vb_rt_divide_by_zero_handler,
-    divide_by_zero_exception_handler
-);
-interrupt_handler!(
-    _vb_rt_illegal_opcode_handler,
-    illegal_opcode_exception_handler
-);
-interrupt_handler!(_vb_rt_lo_trap_handler, lo_trap_handler);
-interrupt_handler!(_vb_rt_hi_trap_handler, hi_trap_handler);
-interrupt_handler!(_vb_rt_address_trap_handler, address_trap_handler);
-interrupt_handler!(
-    _vb_rt_duplexed_exception_handler,
-    duplexed_exception_handler
-);
+in2rupt_handlers! {
+    /// Define a handler to run on game pad interrupts.
+    /// Note that these interrupts never fire on stock hardware.
+    game_pad_interrupt_handler(_vb_rt_game_pad_handler);
+
+    /// Define a handler to run on timer interrupts.
+    timer_interrupt_handler(_vb_rt_timer_handler);
+
+    /// Define a handler to run on game pak interrupts.
+    /// Note that these interrupts never fire on stock hardware.
+    game_pak_interrupt_handler(_vb_rt_game_pak_handler);
+
+    /// Define a handler to run on communication interrupts.
+    communication_interrupt_handler(_vb_rt_communication_handler);
+
+    /// Define a handler to run on VIP interrupts.
+    vip_interrupt_handler(_vb_rt_vip_handler);
+
+    /// Define a handler to run on floating point exceptions.
+    fp_exception_handler(_vb_rt_fp_exception_handler);
+
+    /// Define a handler to run on divide by zero exceptions.
+    divide_by_zero_exception_handler(_vb_rt_divide_by_zero_handler);
+
+    /// Define a handler to run on illegal opcode exceptions.
+    illegal_opcode_exception_handler(_vb_rt_illegal_opcode_handler);
+
+    /// Define a handler to run when the TRAP instruction is fired with an immediate less than 16.
+    lo_trap_handler(_vb_rt_lo_trap_handler);
+
+    /// Define a handler to run when the TRAP instruction is fired with an immediate 16 or greater.
+    hi_trap_handler(_vb_rt_hi_trap_handler);
+
+    /// Define a handler to run when a hardware breakpoint is hit.
+    address_trap_handler(_vb_rt_address_trap_handler);
+
+    /// Define a handler to run when an exception occurs while processing an interrupt.
+    duplexed_exception_handler(_vb_rt_duplexed_exception_handler);
+}
 handler!(_vb_rt_reset);

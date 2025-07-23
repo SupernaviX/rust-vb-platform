@@ -1,3 +1,4 @@
+/// Define the entrypoint to your game.
 #[macro_export]
 macro_rules! main {
     ($body:block) => {

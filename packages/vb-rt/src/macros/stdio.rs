@@ -1,3 +1,6 @@
+/// Prints to standard output.
+/// Note that the Virtual Boy has no standard output,
+/// and this will only have an effect in the Lemur emulator.
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => {
@@ -6,6 +9,9 @@ macro_rules! print {
     };
 }
 
+/// Prints to standard output with a newline at the end.
+/// Note that the Virtual Boy has no standard output,
+/// and this will only have an effect in the Lemur emulator.
 #[macro_export]
 macro_rules! println {
     () => {
