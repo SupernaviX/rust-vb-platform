@@ -75,6 +75,13 @@ mmio! {
     pub const STDOUT: u8 = 0x02000030;
 }
 
+// Real hardware ignores writes to this address.
+// The Lemur emulator lets games write the address of a null-terminated string to this address,
+// to emit a custom marker in the profiler.
+mmio! {
+    pub const MARKER: *const core::ffi::c_char = 0x02000038;
+}
+
 // utility for reading controller data
 pub fn read_controller() -> GamePadData {
     SCR.write(
@@ -122,4 +129,8 @@ pub struct GamePadData {
     pub rl: bool,
     /// Right D-pad down
     pub rd: bool,
+}
+
+pub fn emit_profiling_marker(name: &core::ffi::CStr) {
+    MARKER.write(name.as_ptr());
 }
