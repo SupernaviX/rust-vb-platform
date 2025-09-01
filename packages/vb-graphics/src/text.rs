@@ -112,7 +112,7 @@ impl TextRenderer {
         while self.char_offset.0 >= 8 {
             self.char_offset.0 -= 8;
             self.chardata_index += 1;
-            if ((self.chardata_index - self.chardata_start) % self.chars.0) == 0 {
+            if (self.chardata_index - self.chardata_start).is_multiple_of(self.chars.0) {
                 return false;
             }
         }

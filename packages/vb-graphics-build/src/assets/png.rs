@@ -3,6 +3,7 @@ use png::{ColorType, Decoder, Transformations};
 use std::{
     collections::{BTreeMap, btree_map::Entry},
     fs::File,
+    io::BufReader,
     path::{Path, PathBuf},
 };
 
@@ -67,7 +68,7 @@ impl PngContents {
         position: (isize, isize),
         size: (usize, usize),
         transform: Transform,
-    ) -> PngView {
+    ) -> PngView<'_> {
         let (width, height) = size;
         let size = (
             (width as f64 * transform.scale) as usize,
@@ -85,11 +86,14 @@ impl PngContents {
 fn load_png_contents(path: &Path) -> Result<PngContents> {
     let file = File::open(path)
         .map_err(|e| anyhow!("could not read png from {}: {}", path.display(), e))?;
-    let mut decoder = Decoder::new(file);
+    let mut decoder = Decoder::new(BufReader::new(file));
     decoder.set_transformations(Transformations::normalize_to_color8() | Transformations::ALPHA);
     let mut reader = decoder.read_info()?;
 
-    let mut buf = vec![0; reader.output_buffer_size()];
+    let Some(buffer_size) = reader.output_buffer_size() else {
+        bail!("somehow, this PNG is too big for your address space");
+    };
+    let mut buf = vec![0; buffer_size];
     let info = reader.next_frame(&mut buf)?;
     buf.truncate(info.buffer_size());
 

@@ -9,7 +9,7 @@ impl<T: Copy> VolatilePointer<T> {
     ///
     /// The given address must be valid for reads and writes.
     pub const unsafe fn from_address(address: usize) -> Self {
-        assert!(address % align_of::<T>() == 0);
+        assert!(address.is_multiple_of(align_of::<T>()));
         Self(address as *mut T)
     }
 
