@@ -50,6 +50,8 @@ impl Options {
 struct RawAssetFile {
     #[serde(default)]
     pub imports: Vec<PathBuf>,
+    #[serde(default)]
+    pub palette: Option<[u8; 3]>,
     #[serde(rename = "image", default)]
     pub images: BTreeMap<String, RawImage>,
     #[serde(rename = "mask", default)]
@@ -68,12 +70,15 @@ pub struct RawAssets {
 #[derive(Deserialize, Debug)]
 pub struct RawImage {
     pub chardata: String,
+    #[serde(default)]
+    pub palette: Option<[u8; 3]>,
     #[serde(flatten)]
     pub region: RawImageRegion,
 }
 impl RawImage {
-    fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
+    fn fix(self, opts: &mut Options, dir: &Path, palette: Option<[u8; 3]>) -> Self {
         Self {
+            palette: self.palette.or(palette),
             region: self.region.fix_files(opts, dir),
             ..self
         }
@@ -142,24 +147,25 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
         masks: BTreeMap::new(),
         fonts: BTreeMap::new(),
     };
-    let mut paths = vec![opts.config_file_path()];
-    while let Some(path) = paths.pop() {
+    let mut files = vec![(opts.config_file_path(), None)];
+    while let Some((path, parent_palette)) = files.pop() {
         let file = std::fs::read_to_string(&path)
             .with_context(|| format!("could not read config file {}", path.display()))?;
         let file: RawAssetFile = toml::from_str(&file)?;
+        let palette = file.palette.or(parent_palette);
         let Some(dir) = path.parent() else {
             bail!("invalid config file path {}", path.display());
         };
 
         for import in file.imports {
-            paths.push(opts.input_path(&dir.join(import)));
+            files.push((opts.input_path(&dir.join(import)), palette));
         }
 
         for (name, font) in file.fonts {
             assets.fonts.insert(name, font.fix_files(opts, dir));
         }
         for (name, image) in file.images {
-            assets.images.insert(name, image.fix_files(opts, dir));
+            assets.images.insert(name, image.fix(opts, dir, palette));
         }
         for (name, mask) in file.masks {
             assets.masks.insert(name, mask.fix_files(opts, dir));

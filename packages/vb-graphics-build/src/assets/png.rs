@@ -32,7 +32,7 @@ impl PngAtlas {
 }
 
 pub struct PngContents {
-    pixels: Vec<Shade>,
+    pixels: Vec<Option<u8>>,
     pub size: (usize, usize),
 }
 
@@ -44,31 +44,29 @@ impl PngContents {
         Self::from_greyscale_alpha(&new_bytes, size)
     }
     fn from_greyscale_alpha(bytes: &[u8], size: (usize, usize)) -> Result<Self> {
-        let palette_lookup = [Shade::Black, Shade::Shade1, Shade::Shade2, Shade::Shade3];
-
         let pixels = array_chunks(bytes)
-            .map(|[shade, alpha]| {
-                if *alpha == 0 {
-                    Shade::Transparent
-                } else {
-                    palette_lookup[*shade as usize / 64]
-                }
-            })
+            .map(
+                |[shade, alpha]| {
+                    if *alpha == 0 { None } else { Some(*shade) }
+                },
+            )
             .collect();
         Ok(Self { pixels, size })
     }
-    pub fn get_pixel(&self, x: usize, y: usize) -> Option<Shade> {
+    pub fn get_pixel(&self, x: usize, y: usize) -> Option<u8> {
         if x >= self.size.0 || y >= self.size.1 {
             return None;
         }
-        Some(self.pixels[y * self.size.0 + x])
+        self.pixels[y * self.size.0 + x]
     }
     pub fn view(
         &self,
         position: (isize, isize),
+        palette: Option<[u8; 3]>,
         size: (usize, usize),
         transform: Transform,
     ) -> PngView<'_> {
+        let palette = palette.unwrap_or([64, 128, 192]);
         let (width, height) = size;
         let size = (
             (width as f64 * transform.scale) as usize,
@@ -76,6 +74,7 @@ impl PngContents {
         );
         PngView {
             png: self,
+            palette,
             position,
             size,
             transform,
@@ -108,6 +107,7 @@ fn load_png_contents(path: &Path) -> Result<PngContents> {
 
 pub struct PngView<'a> {
     png: &'a PngContents,
+    palette: [u8; 3],
     position: (isize, isize),
     size: (usize, usize),
     transform: Transform,
@@ -117,9 +117,9 @@ impl PngView<'_> {
     pub fn size(&self) -> (usize, usize) {
         self.size
     }
-    pub fn get_pixel(&self, x: usize, y: usize) -> Option<Shade> {
+    pub fn get_shade(&self, x: usize, y: usize) -> Shade {
         if x >= self.size.0 || y >= self.size.1 {
-            return None;
+            return Shade::Transparent;
         }
         let (mut rel_x, mut rel_y) = (x, y);
         if self.transform.h_flip {
@@ -139,23 +139,38 @@ impl PngView<'_> {
             if self.transform.scale < 1.0 {
                 self.get_max_pixel(real_x as usize, real_y as usize, 1.0 / self.transform.scale)
             } else {
-                self.png.get_pixel(real_x as usize, real_y as usize)
+                self.parse_shade(self.png.get_pixel(real_x as usize, real_y as usize))
             }
         } else {
-            None
+            Shade::Transparent
         }
     }
 
-    fn get_max_pixel(&self, x: usize, y: usize, scale: f64) -> Option<Shade> {
+    fn get_max_pixel(&self, x: usize, y: usize, scale: f64) -> Shade {
         let y_target = (y as f64 + scale).ceil() as usize;
         let x_target = (x as f64 + scale).ceil() as usize;
-        let mut shade = None;
+        let mut shade = Shade::Transparent;
         for y in y..y_target {
             for x in x..x_target {
-                shade = shade.max(self.png.get_pixel(x, y));
+                shade = shade.max(self.parse_shade(self.png.get_pixel(x, y)));
             }
         }
         shade
+    }
+
+    fn parse_shade(&self, pixel: Option<u8>) -> Shade {
+        let Some(pixel) = pixel else {
+            return Shade::Transparent;
+        };
+        if pixel <= self.palette[0] {
+            Shade::Black
+        } else if pixel <= self.palette[1] {
+            Shade::Shade1
+        } else if pixel <= self.palette[2] {
+            Shade::Shade2
+        } else {
+            Shade::Shade3
+        }
     }
 }
 

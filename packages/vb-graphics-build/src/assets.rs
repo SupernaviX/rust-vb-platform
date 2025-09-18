@@ -73,7 +73,7 @@ impl AssetProcessor {
             size,
             transform,
         } = parse_region(png, &image.region)?;
-        let view = png.view(position, size, transform);
+        let view = png.view(position, image.palette, size, transform);
 
         let chardata = self
             .chardata
@@ -87,10 +87,10 @@ impl AssetProcessor {
         let (width, height) = view.size();
         for cell_y in (0..height).step_by(8) {
             for cell_x in (0..width).step_by(8) {
-                let mut shades = [[None; 8]; 8];
+                let mut shades = [[Shade::Transparent; 8]; 8];
                 for (y, shade_row) in shades.iter_mut().enumerate() {
                     for (x, shade) in shade_row.iter_mut().enumerate() {
-                        *shade = view.get_pixel(x + cell_x, y + cell_y);
+                        *shade = view.get_shade(x + cell_x, y + cell_y);
                     }
                 }
 
@@ -126,7 +126,7 @@ impl AssetProcessor {
             size,
             transform,
         } = parse_region(png, &mask.region)?;
-        let view = png.view(position, size, transform);
+        let view = png.view(position, None, size, transform);
 
         let mut pixels = vec![];
         let (width, height) = view.size();
@@ -135,8 +135,8 @@ impl AssetProcessor {
                 let mut collision_data = 0u8;
                 for x in 0..8 {
                     collision_data >>= 1;
-                    let pixel = view.get_pixel(x + cell_x, y);
-                    if pixel.is_some_and(|s| s != Shade::Transparent) {
+                    let shade = view.get_shade(x + cell_x, y);
+                    if shade != Shade::Transparent {
                         collision_data |= 0x80;
                     }
                 }
@@ -281,10 +281,10 @@ struct ImageRegion {
     transform: Transform,
 }
 
-fn shades_to_chardata(shades: [[Option<Shade>; 8]; 8]) -> Result<([u16; 8], u8)> {
+fn shades_to_chardata(shades: [[Shade; 8]; 8]) -> Result<([u16; 8], u8)> {
     let mut char = [0; 8];
     let mut seen_shades = vec![];
-    for shade in shades.iter().flatten().filter_map(|x| *x) {
+    for shade in shades.iter().copied().flatten() {
         if !seen_shades.contains(&shade) {
             seen_shades.push(shade);
         }
@@ -305,11 +305,11 @@ fn shades_to_chardata(shades: [[Option<Shade>; 8]; 8]) -> Result<([u16; 8], u8)>
     for (dst_row, src_row) in char.iter_mut().zip(shades) {
         for (x, src) in src_row.iter().enumerate() {
             let new_value = match src {
-                Some(Shade::Transparent) | None => 0,
-                Some(Shade::Black) => black_shade,
-                Some(Shade::Shade1) => 1,
-                Some(Shade::Shade2) => 2,
-                Some(Shade::Shade3) => 3,
+                Shade::Transparent => 0,
+                Shade::Black => black_shade,
+                Shade::Shade1 => 1,
+                Shade::Shade2 => 2,
+                Shade::Shade3 => 3,
             };
             *dst_row |= new_value << (x * 2);
         }
