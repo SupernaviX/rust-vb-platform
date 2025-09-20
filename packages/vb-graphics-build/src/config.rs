@@ -51,6 +51,8 @@ struct RawAssetFile {
     #[serde(default)]
     pub imports: Vec<PathBuf>,
     #[serde(default)]
+    pub spritesheets: Vec<PathBuf>,
+    #[serde(default)]
     pub palette: Option<[u8; 3]>,
     #[serde(rename = "image", default)]
     pub images: BTreeMap<String, RawImage>,
@@ -58,6 +60,35 @@ struct RawAssetFile {
     pub masks: BTreeMap<String, RawMask>,
     #[serde(rename = "font", default)]
     pub fonts: BTreeMap<String, RawFont>,
+}
+
+#[derive(Deserialize, Debug)]
+struct RawSpritesheet {
+    chardata: String,
+    #[serde(default)]
+    palette: Option<[u8; 3]>,
+    file: PathBuf,
+    #[serde(default)]
+    offset: (isize, isize),
+    sprite_size: (usize, usize),
+    #[serde(default)]
+    sprite_margin: (isize, isize),
+    sprite: BTreeMap<String, RawSprite>,
+}
+
+#[derive(Deserialize, Debug)]
+struct RawSprite {
+    #[serde(default)]
+    pub hflip: bool,
+    #[serde(default)]
+    pub vflip: bool,
+    #[serde(default)]
+    pub transpose: bool,
+    #[serde(default)]
+    pub rotate: usize,
+    #[serde(default = "no_zoom")]
+    pub scale: f64,
+    position: (isize, isize),
 }
 
 #[derive(Debug)]
@@ -160,6 +191,15 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
         for import in file.imports {
             files.push((opts.input_path(&dir.join(import)), palette));
         }
+        for spritesheet in file.spritesheets {
+            let path = opts.input_path(&dir.join(spritesheet));
+            let Some(dir) = path.parent() else {
+                bail!("invalid spritesheet file path {}", path.display());
+            };
+            for (name, image) in parse_spritesheet(&path)? {
+                assets.images.insert(name, image.fix(opts, dir, palette));
+            }
+        }
 
         for (name, font) in file.fonts {
             assets.fonts.insert(name, font.fix_files(opts, dir));
@@ -172,4 +212,40 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
         }
     }
     Ok(assets)
+}
+
+fn parse_spritesheet(path: &Path) -> Result<Vec<(String, RawImage)>> {
+    let file = std::fs::read_to_string(path)
+        .with_context(|| format!("could not read config file {}", path.display()))?;
+    let file: RawSpritesheet = toml::from_str(&file)?;
+    let palette = file.palette;
+
+    let mut sprites = vec![];
+    let spacing = (
+        file.sprite_size.0 as isize + file.sprite_margin.0,
+        file.sprite_size.1 as isize + file.sprite_margin.1,
+    );
+    for (name, sprite) in file.sprite {
+        let position = (
+            file.offset.0 + spacing.0 * sprite.position.0,
+            file.offset.1 + spacing.1 * sprite.position.1,
+        );
+        let region = RawImageRegion {
+            file: file.file.clone(),
+            hflip: sprite.hflip,
+            vflip: sprite.vflip,
+            transpose: sprite.transpose,
+            rotate: sprite.rotate,
+            scale: sprite.scale,
+            position: Some(position),
+            size: Some(file.sprite_size),
+        };
+        let image = RawImage {
+            chardata: file.chardata.clone(),
+            palette,
+            region,
+        };
+        sprites.push((name, image));
+    }
+    Ok(sprites)
 }
