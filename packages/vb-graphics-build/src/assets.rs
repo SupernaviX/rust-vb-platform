@@ -289,8 +289,11 @@ fn shades_to_chardata(shades: [[Shade; 8]; 8]) -> Result<([u16; 8], u8)> {
             seen_shades.push(shade);
         }
     }
+    if seen_shades.len() == 5 {
+        bail!("Too many shades in a single tile");
+    }
 
-    let black_shade = if !seen_shades.contains(&Shade::Black) {
+    let black_shade = if !seen_shades.contains(&Shade::Transparent) {
         0
     } else if !seen_shades.contains(&Shade::Shade1) {
         1
@@ -299,7 +302,7 @@ fn shades_to_chardata(shades: [[Shade; 8]; 8]) -> Result<([u16; 8], u8)> {
     } else if !seen_shades.contains(&Shade::Shade3) {
         3
     } else {
-        bail!("Too many shades in a single tile")
+        0
     };
 
     for (dst_row, src_row) in char.iter_mut().zip(shades) {
