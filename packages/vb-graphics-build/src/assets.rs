@@ -293,9 +293,7 @@ fn shades_to_chardata(shades: [[Shade; 8]; 8]) -> Result<([u16; 8], u8)> {
         bail!("Too many shades in a single tile");
     }
 
-    let black_shade = if !seen_shades.contains(&Shade::Transparent) {
-        0
-    } else if !seen_shades.contains(&Shade::Shade1) {
+    let black_shade = if !seen_shades.contains(&Shade::Shade1) {
         1
     } else if !seen_shades.contains(&Shade::Shade2) {
         2
