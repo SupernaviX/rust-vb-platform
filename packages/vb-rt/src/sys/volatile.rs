@@ -1,3 +1,7 @@
+/// A pointer to a volatile memory address.
+/// Intended to be used for MMIO structures,
+/// where the compiler should assume volatile semantics
+/// (i.e. never optimize out writes, never assume that reads are stable)
 #[repr(transparent)]
 #[derive(Clone, Copy)]
 pub struct VolatilePointer<T>(*mut T);
@@ -18,7 +22,7 @@ impl<T: Copy> VolatilePointer<T> {
     /// # Safety
     ///
     /// The given offset must point to a field of the given type.
-    pub(crate) const unsafe fn field<U: Copy>(self, offset: usize) -> VolatilePointer<U> {
+    pub const unsafe fn field<U: Copy>(self, offset: usize) -> VolatilePointer<U> {
         assert!(offset < size_of::<T>());
         let inner = unsafe { self.0.cast::<u8>().add(offset) }.cast::<U>();
         VolatilePointer(inner)
@@ -34,6 +38,13 @@ impl<T: Copy> VolatilePointer<T> {
         unsafe { self.0.write_volatile(val) }
     }
 }
+
+/// SAFETY: we always use volatile semantics, and never mutate the address we contain,
+/// so sending between "threads"/interrupts is fine.
+unsafe impl<T: Copy> Send for VolatilePointer<T> {}
+/// SAFETY: we always use volatile semantics, and never mutate the address we contain,
+/// so it doesn't matter how many "threads"/interrupts have a reference to this.
+unsafe impl<T: Copy> Sync for VolatilePointer<T> {}
 
 impl<T> core::fmt::Debug for VolatilePointer<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -69,7 +80,15 @@ impl<T: Copy, const N: usize> VolatilePointer<[T; N]> {
 
     pub const fn index(self, index: usize) -> VolatilePointer<T> {
         assert!(index < N);
-        unsafe { VolatilePointer(self.0.cast::<T>().add(index)) }
+        // unsafe { VolatilePointer(self.0.cast::<T>().add(index)) }
+        unsafe { self.offset(index * size_of::<T>()) }
+    }
+
+    /// SAFETY: the offset must be within this data's allocation.
+    const unsafe fn offset(self, offset: usize) -> VolatilePointer<T> {
+        // below wacky antics avoid pointer provenance bugs for compile-time indexing
+        let address: usize = unsafe { core::mem::transmute(self) };
+        unsafe { core::mem::transmute(address + offset) }
     }
 }
 
@@ -102,9 +121,9 @@ macro_rules! impl_overaligned_volatile_pointer {
 
             pub fn read_slice(self, slice: &mut [$typ], start: usize) {
                 assert!(start + slice.len() < N);
-                let offsets = start..start + slice.len();
-                for (dst, offset) in slice.iter_mut().zip(offsets) {
-                    let src: VolatilePointer<$typ> = unsafe { self.0.field(offset * A) };
+                let indices = start..start + slice.len();
+                for (dst, index) in slice.iter_mut().zip(indices) {
+                    let src: VolatilePointer<$typ> = unsafe { self.index_unchecked(index) };
                     *dst = src.read();
                 }
             }
@@ -112,8 +131,8 @@ macro_rules! impl_overaligned_volatile_pointer {
             pub fn read_array<const M: usize>(self, start: usize) -> [$typ; M] {
                 assert!(start + M <= N);
                 let mut array = [core::mem::MaybeUninit::<$typ>::uninit(); M];
-                for (offset, dst) in array.iter_mut().enumerate() {
-                    dst.write(unsafe { self.0.field(offset * A).read() });
+                for (index, dst) in array.iter_mut().enumerate() {
+                    dst.write(unsafe { self.index_unchecked(index).read() });
                 }
                 // SAFETY: we loaded every value
                 unsafe { core::mem::transmute_copy(&array) }
@@ -121,15 +140,20 @@ macro_rules! impl_overaligned_volatile_pointer {
 
             pub fn write_slice(self, slice: &[$typ], start: usize) {
                 assert!(start + slice.len() <= N);
-                for (src, offset) in slice.iter().zip(start..start + slice.len()) {
-                    let dst: VolatilePointer<$typ> = unsafe { self.0.field(offset * A) };
+                for (src, index) in slice.iter().zip(start..start + slice.len()) {
+                    let dst: VolatilePointer<$typ> = unsafe { self.index_unchecked(index) };
                     dst.write(*src);
                 }
             }
 
             pub const fn index(self, index: usize) -> VolatilePointer<$typ> {
                 assert!(index < N);
-                unsafe { self.0.field(index * A) }
+                unsafe { self.index_unchecked(index) }
+            }
+
+            /// SAFETY: make sure this index is in bounds first
+            const unsafe fn index_unchecked(self, index: usize) -> VolatilePointer<$typ> {
+                unsafe { self.0.offset(index * A) }
             }
         }
 

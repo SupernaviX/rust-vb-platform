@@ -1,0 +1,22 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "spooky-music"
+version = "0.1.0"
+edition = "2024"
+forced-target = "v810-unknown-vb"
+
+[[bin]]
+name = "spooky-music"
+test = false
+bench = false
+
+[dependencies]
+vb-graphics = { path = "../../packages/vb-graphics" }
+vb-rt = { path = "../../packages/vb-rt" }
+vb-sound = { path = "../../packages/vb-sound" }
+
+[build-dependencies]
+vb-graphics-build = { path = "../../packages/vb-graphics-build" }
+vb-rt-build = { path = "../../packages/vb-rt-build" }
+vb-sound-build = { path = "../../packages/vb-sound-build" }

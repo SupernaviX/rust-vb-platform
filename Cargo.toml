@@ -6,8 +6,11 @@ members = [
     "packages/vb-graphics-build",
     "packages/vb-rt",
     "packages/vb-rt-build",
+    "packages/vb-sound",
+    "packages/vb-sound-build",
     "examples/display-text",
     "examples/hello-world",
+    "examples/spooky-music",
 ]
 resolver = "3"
 

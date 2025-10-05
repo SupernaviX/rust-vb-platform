@@ -259,6 +259,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d66dc143e6b11c1eddc06d5c423cfc97062865baf299914ab64caa38182078fe"
 
 [[package]]
+name = "spooky-music"
+version = "0.1.0"
+dependencies = [
+ "vb-graphics",
+ "vb-graphics-build",
+ "vb-rt",
+ "vb-rt-build",
+ "vb-sound",
+ "vb-sound-build",
+]
+
+[[package]]
 name = "syn"
 version = "2.0.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -357,6 +369,22 @@ dependencies = [
 [[package]]
 name = "vb-rt-build"
 version = "0.1.0"
+
+[[package]]
+name = "vb-sound"
+version = "0.1.0"
+dependencies = [
+ "vb-rt",
+]
+
+[[package]]
+name = "vb-sound-build"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "toml",
+]
 
 [[package]]
 name = "winnow"
