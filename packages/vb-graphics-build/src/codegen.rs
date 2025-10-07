@@ -4,7 +4,7 @@ use crate::{Options, assets::Assets};
 use anyhow::Result;
 
 pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
-    let mut file = opts.output_file("assets.rs")?;
+    let mut file = opts.output_file("graphics_assets.rs")?;
 
     for chardata in assets.chardata {
         let char_count = chardata.chars.len();

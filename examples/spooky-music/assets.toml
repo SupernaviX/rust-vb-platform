@@ -1,2 +1,11 @@
-[instruments.square]
-waveform.raw = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3e, 0x3e, 0x3e, 0x3e, 0x3f, 0x3f, 0x3f, 0x3f, 0x3e, 0x3e, 0x3e, 0x3e, 0x3f, 0x3f, 0x3f, 0x3f]
+[instrument.square]
+waveform = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 62, 62, 62, 63, 63, 63, 63, 62, 62, 62, 62, 63, 63, 63, 63]
+[instrument.noise]
+tap = 0
+
+[midi.bg]
+file = "assets/donjon.mid"
+channel.0 = { channel = 0, instrument = "square" }
+channel.1 = { channel = 1, instrument = "square" }
+channel.2 = { channel = 2, instrument = "square" }
+channel.3 = { channel = 3, instrument = "noise" }

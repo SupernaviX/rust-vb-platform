@@ -1,6 +1,8 @@
 use std::{
     collections::{BTreeMap, HashSet},
     env,
+    fs::File,
+    io::BufWriter,
     path::{Path, PathBuf},
 };
 
@@ -10,7 +12,6 @@ use serde::Deserialize;
 pub struct Options {
     config_file: PathBuf,
     input_dir: PathBuf,
-    #[expect(unused)]
     output_dir: PathBuf,
     emit_cargo: bool,
     seen: HashSet<PathBuf>,
@@ -52,36 +53,60 @@ impl Options {
         }
         result
     }
+
+    pub(crate) fn output_file(&self, path: &str) -> Result<BufWriter<File>> {
+        let file = File::create(self.output_dir.join(path))?;
+        Ok(BufWriter::new(file))
+    }
 }
 
 #[derive(Deserialize, Debug)]
 struct RawAssetFile {
     #[serde(default)]
     pub imports: Vec<PathBuf>,
-    #[serde(default)]
-    pub sound: BTreeMap<String, RawSound>,
+    #[serde(rename = "instrument", default)]
+    pub instruments: BTreeMap<String, RawInstrument>,
+    #[serde(rename = "midi", default)]
+    pub midis: BTreeMap<String, RawMidi>,
 }
 
 #[derive(Deserialize, Debug)]
-pub struct RawSound {
-    pub file: PathBuf,
+pub struct RawInstrument {
+    pub waveform: Option<[u8; 32]>,
+    pub tap: Option<u8>,
 }
-impl RawSound {
+
+#[derive(Deserialize, Debug)]
+pub struct RawMidi {
+    pub file: PathBuf,
+    #[serde(rename = "channel", default)]
+    pub channels: BTreeMap<String, RawChannel>,
+}
+impl RawMidi {
     fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
         Self {
             file: opts.input_path(&dir.join(self.file)),
+            ..self
         }
     }
 }
 
+#[derive(Deserialize, Debug)]
+pub struct RawChannel {
+    pub channel: u8,
+    pub instrument: String,
+}
+
 #[derive(Debug)]
 pub struct RawAssets {
-    pub sounds: BTreeMap<String, RawSound>,
+    pub instruments: BTreeMap<String, RawInstrument>,
+    pub midis: BTreeMap<String, RawMidi>,
 }
 
 pub fn parse(opts: &mut Options) -> Result<RawAssets> {
     let mut assets = RawAssets {
-        sounds: BTreeMap::new(),
+        instruments: BTreeMap::new(),
+        midis: BTreeMap::new(),
     };
     let mut files = vec![opts.config_file_path()];
     while let Some(path) = files.pop() {
@@ -96,8 +121,12 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
             files.push(opts.input_path(&dir.join(import)));
         }
 
-        for (name, sound) in file.sound {
-            assets.sounds.insert(name, sound.fix_files(opts, dir));
+        for (name, instrument) in file.instruments {
+            assets.instruments.insert(name, instrument);
+        }
+
+        for (name, midi) in file.midis {
+            assets.midis.insert(name, midi.fix_files(opts, dir));
         }
     }
     Ok(assets)

@@ -1,8 +1,16 @@
 #![no_std]
 
+mod assets;
+
 use core::sync::atomic::{AtomicPtr, AtomicU32, Ordering::Relaxed};
 
 use vb_rt::sys::{VolatilePointer, vsu};
+
+pub fn load_waveforms(waveforms: &[[u8; 32]]) {
+    for (index, waveform) in waveforms.iter().enumerate() {
+        vsu::WAVEFORMS.index(index).write_slice(waveform, 0);
+    }
+}
 
 pub struct SoundPlayer {
     channels: [ChannelState; 6],
@@ -20,17 +28,6 @@ impl SoundPlayer {
                 ChannelState::new(5),
             ],
         }
-    }
-
-    pub fn init(&self) {
-        #[rustfmt::skip]
-        let square = [
-             0,  0,  0,  0,  0,  0,  0,  0,
-             0,  0,  0,  0,  0,  0,  0,  0,
-            62, 62, 62, 62, 63, 63, 63, 63,
-            62, 62, 62, 62, 63, 63, 63, 63,
-        ];
-        vsu::WAVEFORMS.index(0).write_slice(&square, 0);
     }
 
     pub fn play(&self, channel: usize, program: *const u32) {

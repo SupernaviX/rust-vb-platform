@@ -20,11 +20,11 @@ fn main() {
     gfx::init_display();
     gfx::set_colors(32, 64, 32);
     gfx::set_bkcol(0);
-    SOUND.init();
-    SOUND.play(0, assets::CHANNEL_0.as_ptr());
-    SOUND.play(1, assets::CHANNEL_1.as_ptr());
-    SOUND.play(2, assets::CHANNEL_2.as_ptr());
-    SOUND.play(5, assets::CHANNEL_3.as_ptr());
+    snd::load_waveforms(&assets::WAVEFORMS);
+    SOUND.play(0, assets::BG_0.as_ptr());
+    SOUND.play(1, assets::BG_1.as_ptr());
+    SOUND.play(2, assets::BG_2.as_ptr());
+    SOUND.play(5, assets::BG_3.as_ptr());
     // gfx::load_character_data(&assets::ALL, 0);
 
     FRAME.enable_interrupts();

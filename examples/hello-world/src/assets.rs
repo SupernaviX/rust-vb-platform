@@ -1,1 +1,1 @@
-include!(concat!(env!("OUT_DIR"), "/assets.rs"));
+include!(concat!(env!("OUT_DIR"), "/graphics_assets.rs"));
