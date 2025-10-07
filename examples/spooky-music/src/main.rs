@@ -24,7 +24,8 @@ fn main() {
     SOUND.play(0, assets::BG_0.as_ptr());
     SOUND.play(1, assets::BG_1.as_ptr());
     SOUND.play(2, assets::BG_2.as_ptr());
-    SOUND.play(5, assets::BG_3.as_ptr());
+    SOUND.play(3, assets::BG_3.as_ptr());
+    SOUND.play(5, assets::BG_5.as_ptr());
     // gfx::load_character_data(&assets::ALL, 0);
 
     FRAME.enable_interrupts();

@@ -95,6 +95,22 @@ impl RawMidi {
 pub struct RawChannel {
     pub channel: u8,
     pub instrument: String,
+    #[serde(flatten, default)]
+    pub effects: ChannelEffects,
+}
+
+const fn default_shift() -> f64 {
+    0.0
+}
+const fn default_volume() -> f64 {
+    1.0
+}
+#[derive(Deserialize, Debug, Default, Clone)]
+pub struct ChannelEffects {
+    #[serde(default = "default_shift")]
+    pub shift: f64,
+    #[serde(default = "default_volume")]
+    pub volume: f64,
 }
 
 #[derive(Debug)]

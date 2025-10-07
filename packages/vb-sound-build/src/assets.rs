@@ -28,9 +28,9 @@ pub fn process(assets: RawAssets) -> Result<Assets> {
         let mut decoder = MidiDecoder::new(&name, &midi.file);
         for (name, channel) in midi.channels {
             if let Some(waveform) = instrument_waveforms.get(&channel.instrument) {
-                decoder.pcm_channel(&name, channel.channel, *waveform);
+                decoder.pcm_channel(&name, channel.channel, *waveform, &channel.effects);
             } else if let Some(tap) = instrument_taps.get(&channel.instrument) {
-                decoder.noise_channel(&name, channel.channel, *tap);
+                decoder.noise_channel(&name, channel.channel, *tap, &channel.effects);
             }
         }
         for channel in decoder.decode()? {

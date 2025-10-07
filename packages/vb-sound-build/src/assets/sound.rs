@@ -4,6 +4,8 @@ use std::{
     time::Duration,
 };
 
+use crate::config::ChannelEffects;
+
 #[derive(Debug, Default)]
 struct SoundRow {
     note: Option<NoteEvent>,
@@ -42,6 +44,7 @@ struct NoteStart {
 const INTERVAL_UNIT: Duration = Duration::from_nanos(3_840_246);
 
 pub struct ChannelPlayer {
+    effects: ChannelEffects,
     noise: bool,
     timeline: BTreeMap<Moment, SoundRow>,
     now: Moment,
@@ -54,8 +57,9 @@ pub struct ChannelPlayer {
 }
 
 impl ChannelPlayer {
-    pub fn new() -> Self {
+    pub fn new(effects: ChannelEffects) -> Self {
         Self {
+            effects,
             noise: false,
             timeline: BTreeMap::new(),
             now: Moment::START,
@@ -81,7 +85,7 @@ impl ChannelPlayer {
     }
 
     pub fn set_volume(&mut self, volume: u8) {
-        let volume = volume >> 4;
+        let volume = (volume as f64 * self.effects.volume / 16.0) as u8;
         if self.last_volume != Some(volume) {
             self.timeline.entry(self.now).or_default().volume = Some(volume);
             self.last_volume = Some(volume);
@@ -113,7 +117,7 @@ impl ChannelPlayer {
         }
         let row = self.timeline.entry(self.now).or_default();
         if self.last_key != Some(key) {
-            let frequency = key_to_clocks(key).expect("note is too low");
+            let frequency = key_to_clocks(key, self.effects.shift).expect("note is too low");
             row.frequency = Some(frequency);
             self.last_key = Some(key);
         }
@@ -226,11 +230,11 @@ fn emit_events(row: SoundRow, events: &mut Vec<VBEvent>) {
     }
 }
 
-fn key_to_pitch(key: u8) -> f64 {
+fn key_to_pitch(key: u8, shift: f64) -> f64 {
     const A4_KEY: u8 = 69;
 
     let semitones_from_a4 = key as f64 - A4_KEY as f64;
-    440.0 * 2.0f64.powf(semitones_from_a4 / 12.0)
+    440.0 * 2.0f64.powf((semitones_from_a4 + shift) / 12.0)
 }
 
 fn pitch_to_clocks(pitch: f64) -> Option<u16> {
@@ -238,8 +242,8 @@ fn pitch_to_clocks(pitch: f64) -> Option<u16> {
     if freq > 0.0 { Some(freq as u16) } else { None }
 }
 
-fn key_to_clocks(key: u8) -> Option<u16> {
-    pitch_to_clocks(key_to_pitch(key))
+fn key_to_clocks(key: u8, shift: f64) -> Option<u16> {
+    pitch_to_clocks(key_to_pitch(key, shift))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

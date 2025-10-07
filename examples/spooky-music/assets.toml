@@ -5,7 +5,8 @@ tap = 0
 
 [midi.bg]
 file = "assets/donjon.mid"
-channel.0 = { channel = 0, instrument = "square" }
-channel.1 = { channel = 1, instrument = "square" }
-channel.2 = { channel = 2, instrument = "square" }
-channel.3 = { channel = 3, instrument = "noise" }
+channel.0 = { channel = 0, instrument = "square", shift = +0.045, volume = 0.5 }
+channel.1 = { channel = 0, instrument = "square", shift = -0.045, volume = 0.5 }
+channel.2 = { channel = 1, instrument = "square" }
+channel.3 = { channel = 2, instrument = "square" }
+channel.5 = { channel = 3, instrument = "noise" }

@@ -11,7 +11,10 @@ use midi_reader_writer::midly_0_5::{
     merge_tracks,
 };
 
-use crate::assets::{Channel, sound::EventEncoder};
+use crate::{
+    assets::{Channel, sound::EventEncoder},
+    config::ChannelEffects,
+};
 
 use super::sound::{ChannelPlayer, Moment};
 
@@ -46,8 +49,8 @@ impl MidiDecoder {
         }
     }
 
-    pub fn pcm_channel(&mut self, name: &str, index: u8, waveform: u8) {
-        let mut player = ChannelPlayer::new();
+    pub fn pcm_channel(&mut self, name: &str, index: u8, waveform: u8, effects: &ChannelEffects) {
+        let mut player = ChannelPlayer::new(effects.clone());
         player.set_instrument(waveform);
         player.set_volume(normalize_volume(127));
         player.set_envelope(normalize_volume(127));
@@ -60,8 +63,8 @@ impl MidiDecoder {
             });
     }
 
-    pub fn noise_channel(&mut self, name: &str, index: u8, tap: u8) {
-        let mut player = ChannelPlayer::new();
+    pub fn noise_channel(&mut self, name: &str, index: u8, tap: u8, effects: &ChannelEffects) {
+        let mut player = ChannelPlayer::new(effects.clone());
         player.set_tap(tap);
         player.set_volume(normalize_volume(127));
         player.set_envelope(normalize_volume(127));
