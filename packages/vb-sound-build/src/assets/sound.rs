@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     ops::{Add, Sub},
     time::Duration,
 };
@@ -14,6 +14,8 @@ struct SoundRow {
     volume: Option<u8>,
     envelope: Option<u8>,
     tap: Option<u8>,
+    start_pattern: Option<u8>,
+    go_to_pattern: Option<u8>,
 }
 
 impl SoundRow {
@@ -25,6 +27,8 @@ impl SoundRow {
             envelope: other.envelope.or(self.envelope),
             note: other.note.or(self.note),
             tap: other.tap.or(self.tap),
+            start_pattern: other.start_pattern.or(self.start_pattern),
+            go_to_pattern: other.go_to_pattern.or(self.go_to_pattern),
         }
     }
 }
@@ -75,6 +79,14 @@ impl ChannelPlayer {
     pub fn advance_time(&mut self, now: Moment) {
         assert!(self.now <= now);
         self.now = now;
+    }
+
+    pub fn start_pattern(&mut self, index: u8) {
+        self.timeline.entry(self.now).or_default().start_pattern = Some(index);
+    }
+
+    pub fn go_to_pattern(&mut self, index: u8) {
+        self.timeline.entry(self.now).or_default().go_to_pattern = Some(index);
     }
 
     pub fn set_instrument(&mut self, instrument: u8) {
@@ -179,6 +191,9 @@ impl ChannelPlayer {
 }
 
 fn emit_events(row: SoundRow, events: &mut Vec<VBEvent>) {
+    if let Some(index) = row.start_pattern {
+        events.push(VBEvent::StartPattern { index });
+    }
     if let Some(frequency) = row.frequency {
         events.push(VBEvent::SetFrequency { frequency });
     }
@@ -227,6 +242,9 @@ fn emit_events(row: SoundRow, events: &mut Vec<VBEvent>) {
             });
         }
         None => {}
+    }
+    if let Some(index) = row.go_to_pattern {
+        events.push(VBEvent::GoToPattern { index });
     }
 }
 
@@ -302,18 +320,29 @@ pub enum VBEvent {
         auto: bool,
         interval: u8,
     },
+    StartPattern {
+        index: u8,
+    },
+    GoToPattern {
+        index: u8,
+    },
     Stop,
 }
 
 pub struct EventEncoder {
     bytes: Vec<u8>,
+    patterns: HashMap<u8, i32>,
 }
 impl EventEncoder {
     const WAIT: u8 = 0;
     const WRITE: u8 = 1;
+    const JUMP: u8 = 2;
 
     pub fn new() -> Self {
-        Self { bytes: vec![] }
+        Self {
+            bytes: vec![],
+            patterns: HashMap::new(),
+        }
     }
 
     pub fn encode(&mut self, event: VBEvent) {
@@ -362,6 +391,15 @@ impl EventEncoder {
                     | (interval & 0x1f);
                 self.encode_write(0x00, int);
             }
+            VBEvent::StartPattern { index } => {
+                self.patterns.insert(index, self.bytes.len() as i32 / 4);
+            }
+            VBEvent::GoToPattern { index } => {
+                let target = *self.patterns.get(&index).expect("unrecognized pattern") as i32;
+                let current = self.bytes.len() as i32 / 4;
+                self.bytes.push(Self::JUMP);
+                self.encode_i24(target - current);
+            }
             VBEvent::Stop => {
                 for _ in 0..4 {
                     self.bytes.push(0);
@@ -380,6 +418,18 @@ impl EventEncoder {
     fn encode_u24(&mut self, value: u32) {
         let bytes = value.to_le_bytes();
         assert_eq!(bytes[3], 0);
+        for byte in &bytes[0..3] {
+            self.bytes.push(*byte);
+        }
+    }
+
+    fn encode_i24(&mut self, value: i32) {
+        let bytes = value.to_le_bytes();
+        if value.is_negative() {
+            assert_eq!(bytes[3], 255);
+        } else {
+            assert_eq!(bytes[3], 0);
+        }
         for byte in &bytes[0..3] {
             self.bytes.push(*byte);
         }

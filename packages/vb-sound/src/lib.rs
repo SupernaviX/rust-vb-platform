@@ -137,7 +137,8 @@ impl ChannelEvent {
                 value: b3,
             },
             2 => {
-                let offset = i32::from_le_bytes([b1, b2, b3, 0]);
+                let high_byte = if b3 >= 128 { 255 } else { 0 };
+                let offset = i32::from_le_bytes([b1, b2, b3, high_byte]);
                 Self::Jump {
                     offset: offset as isize,
                 }

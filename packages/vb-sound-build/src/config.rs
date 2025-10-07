@@ -76,9 +76,15 @@ pub struct RawInstrument {
     pub tap: Option<u8>,
 }
 
+const fn default_loop() -> bool {
+    true
+}
+
 #[derive(Deserialize, Debug)]
 pub struct RawMidi {
     pub file: PathBuf,
+    #[serde(rename = "loop", default = "default_loop")]
+    pub looping: bool,
     #[serde(rename = "channel", default)]
     pub channels: BTreeMap<String, RawChannel>,
 }

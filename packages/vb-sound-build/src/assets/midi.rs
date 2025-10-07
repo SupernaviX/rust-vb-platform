@@ -38,13 +38,15 @@ impl ChannelBuilder {
 pub struct MidiDecoder {
     name: String,
     file: PathBuf,
+    looping: bool,
     channels: HashMap<u8, Vec<ChannelBuilder>>,
 }
 impl MidiDecoder {
-    pub fn new(name: &str, file: &Path) -> Self {
+    pub fn new(name: &str, file: &Path, looping: bool) -> Self {
         Self {
             name: name.to_string(),
             file: file.to_path_buf(),
+            looping,
             channels: HashMap::new(),
         }
     }
@@ -90,6 +92,20 @@ impl MidiDecoder {
                 }
                 TrackEventKind::Meta(MetaMessage::TimeSignature(_, denom, _, _)) => {
                     clock.set_time_signature_denom(denom);
+                }
+                TrackEventKind::Meta(MetaMessage::Marker(text)) => {
+                    if text == b"Loop Start" {
+                        for channel in self.channels.values_mut().flatten() {
+                            channel.player.advance_time(clock.now());
+                            channel.player.start_pattern(0);
+                        }
+                    }
+                    if text == b"Loop End" && self.looping {
+                        for channel in self.channels.values_mut().flatten() {
+                            channel.player.advance_time(clock.now());
+                            channel.player.go_to_pattern(0);
+                        }
+                    }
                 }
                 TrackEventKind::Midi { channel, message } => {
                     let channel = channel.as_int();

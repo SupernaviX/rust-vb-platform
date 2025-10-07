@@ -25,7 +25,7 @@ pub fn process(assets: RawAssets) -> Result<Assets> {
     }
     let mut channels = vec![];
     for (name, midi) in assets.midis {
-        let mut decoder = MidiDecoder::new(&name, &midi.file);
+        let mut decoder = MidiDecoder::new(&name, &midi.file, midi.looping);
         for (name, channel) in midi.channels {
             if let Some(waveform) = instrument_waveforms.get(&channel.instrument) {
                 decoder.pcm_channel(&name, channel.channel, *waveform, &channel.effects);
