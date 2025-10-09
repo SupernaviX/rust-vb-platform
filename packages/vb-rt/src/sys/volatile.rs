@@ -64,7 +64,8 @@ impl<T: Copy, const N: usize> VolatilePointer<[T; N]> {
     pub fn read_array<const M: usize>(self, start: usize) -> [T; M] {
         assert!(start + M <= N);
         let mut array = [core::mem::MaybeUninit::uninit(); M];
-        for (offset, dst) in array.iter_mut().enumerate() {
+        let offsets = start..start + N;
+        for (dst, offset) in array.iter_mut().zip(offsets) {
             dst.write(unsafe { self.0.cast::<T>().add(offset).read_volatile() });
         }
         // SAFETY: we loaded every value
@@ -73,8 +74,23 @@ impl<T: Copy, const N: usize> VolatilePointer<[T; N]> {
 
     pub fn write_slice(self, slice: &[T], start: usize) {
         assert!(start + slice.len() <= N);
-        for (src, offset) in slice.iter().zip(start..start + slice.len()) {
-            unsafe { self.0.cast::<T>().add(offset).write_volatile(*src) };
+        if core::mem::align_of::<T>() >= 4 {
+            if slice.is_empty() {
+                return;
+            }
+            let src = slice.as_ptr().cast();
+            let dst = unsafe { (self.0 as *mut u8).add(start * size_of::<T>()) };
+            let count = core::mem::size_of_val(slice);
+            unsafe {
+                crate::builtins::memcpy_wordaligned(dst, src, count);
+            }
+        } else {
+            let src = slice.as_ptr();
+            let dst = unsafe { (self.0 as *mut T).add(start) };
+            let count = slice.len();
+            unsafe {
+                core::ptr::copy_nonoverlapping(src, dst, count);
+            }
         }
     }
 

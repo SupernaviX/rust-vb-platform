@@ -395,7 +395,7 @@ impl EventEncoder {
                 self.patterns.insert(index, self.bytes.len() as i32 / 4);
             }
             VBEvent::GoToPattern { index } => {
-                let target = *self.patterns.get(&index).expect("unrecognized pattern") as i32;
+                let target = *self.patterns.get(&index).expect("unrecognized pattern");
                 let current = self.bytes.len() as i32 / 4;
                 self.bytes.push(Self::JUMP);
                 self.encode_i24(target - current);
