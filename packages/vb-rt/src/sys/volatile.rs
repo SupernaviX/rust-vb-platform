@@ -74,19 +74,19 @@ impl<T: Copy, const N: usize> VolatilePointer<[T; N]> {
 
     pub fn write_slice(self, slice: &[T], start: usize) {
         assert!(start + slice.len() <= N);
-        if core::mem::align_of::<T>() >= 4 {
+        let src = slice.as_ptr();
+        let dst = unsafe { (self.0 as *mut T).add(start) };
+        let bytes = core::mem::size_of_val(slice);
+        if can_wordaligned_memcpy(dst, src, bytes) {
             if slice.is_empty() {
                 return;
             }
-            let src = slice.as_ptr().cast();
-            let dst = unsafe { (self.0 as *mut u8).add(start * size_of::<T>()) };
-            let count = core::mem::size_of_val(slice);
+            let src = src.cast();
+            let dst = dst.cast();
             unsafe {
-                crate::builtins::memcpy_wordaligned(dst, src, count);
+                crate::builtins::memcpy_wordaligned(dst, src, bytes);
             }
         } else {
-            let src = slice.as_ptr();
-            let dst = unsafe { (self.0 as *mut T).add(start) };
             let count = slice.len();
             unsafe {
                 core::ptr::copy_nonoverlapping(src, dst, count);
@@ -106,6 +106,14 @@ impl<T: Copy, const N: usize> VolatilePointer<[T; N]> {
         let address: usize = unsafe { core::mem::transmute(self) };
         unsafe { core::mem::transmute(address + offset) }
     }
+}
+
+#[inline(always)]
+fn can_wordaligned_memcpy<T>(dst: *mut T, src: *const T, bytes: usize) -> bool {
+    if core::mem::align_of::<T>() >= 4 {
+        return true;
+    }
+    dst.addr().is_multiple_of(4) && src.addr().is_multiple_of(4) && bytes.is_multiple_of(4)
 }
 
 /**
