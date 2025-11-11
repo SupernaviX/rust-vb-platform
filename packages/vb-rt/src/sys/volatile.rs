@@ -195,7 +195,7 @@ macro_rules! impl_overaligned_volatile_pointer {
 
             pub const fn index(self, index: usize) -> OveralignedVolatilePointer<[$typ; M], A> {
                 assert!(index < N);
-                OveralignedVolatilePointer(unsafe { self.0.field(index * M * A) })
+                OveralignedVolatilePointer(unsafe { self.0.offset(index * M * A) })
             }
         }
     };

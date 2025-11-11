@@ -1,12 +1,17 @@
-[instrument.square]
-waveform = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 62, 62, 62, 63, 63, 63, 63, 62, 62, 62, 62, 63, 63, 63, 63]
-[instrument.noise]
-tap = 0
+[waveform.square]
+values = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 62, 62, 62, 63, 63, 63, 63, 62, 62, 62, 62, 63, 63, 63, 63]
+[waveform.lead]
+fur = { name = "test", wavetable = 0 }
+[waveform.bass]
+fur = { name = "test", wavetable = 1 }
 
 [midi.bg]
 file = "assets/donjon.mid"
-channel.0 = { channel = 0, instrument = "square", shift = +0.045, volume = 0.5 }
-channel.1 = { channel = 0, instrument = "square", shift = -0.045, volume = 0.5 }
-channel.2 = { channel = 1, instrument = "square" }
-channel.3 = { channel = 2, instrument = "square" }
-channel.5 = { channel = 3, instrument = "noise" }
+channel.0 = { channel = 0, waveform = "square", shift = +0.045, volume = 0.5 }
+channel.1 = { channel = 0, waveform = "square", shift = -0.045, volume = 0.5 }
+channel.2 = { channel = 1, waveform = "square" }
+channel.3 = { channel = 2, waveform = "square" }
+channel.5 = { channel = 3, tap = 0 }
+
+[fur.test]
+file = "assets/test.fur"

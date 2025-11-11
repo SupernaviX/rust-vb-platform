@@ -12,28 +12,11 @@ use midi_reader_writer::midly_0_5::{
 };
 
 use crate::{
-    assets::{Channel, sound::EventEncoder},
+    assets::{Channel, sound::ChannelBuilder},
     config::ChannelEffects,
 };
 
 use super::sound::{ChannelPlayer, Moment};
-
-struct ChannelBuilder {
-    name: String,
-    player: ChannelPlayer,
-}
-impl ChannelBuilder {
-    fn build(self) -> Channel {
-        let mut encoder = EventEncoder::new();
-        for event in self.player.finish() {
-            encoder.encode(event);
-        }
-        Channel {
-            name: self.name,
-            data: encoder.finish(),
-        }
-    }
-}
 
 pub struct MidiDecoder {
     name: String,
@@ -53,7 +36,7 @@ impl MidiDecoder {
 
     pub fn pcm_channel(&mut self, name: &str, index: u8, waveform: u8, effects: &ChannelEffects) {
         let mut player = ChannelPlayer::new(effects.clone());
-        player.set_instrument(waveform);
+        player.set_waveform(waveform);
         player.set_volume(normalize_volume(127));
         player.set_envelope(normalize_volume(127));
         self.channels
@@ -159,7 +142,7 @@ impl MidiDecoder {
 // MIDI range for volume/expression is 0-127,
 // and should be squared (as a fraction of 1) to sound right
 fn normalize_volume(mid: u8) -> u8 {
-    ((mid as f32 / 127.0).powi(2) * 255.0).round() as u8
+    ((mid as f32 / 127.0).powi(2) * 15.0).round() as u8
 }
 
 struct Clock {

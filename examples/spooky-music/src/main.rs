@@ -21,11 +21,8 @@ fn main() {
     gfx::set_colors(32, 64, 32);
     gfx::set_bkcol(0);
     snd::load_waveforms(&assets::WAVEFORMS);
-    SOUND.play(0, assets::BG_0.as_ptr());
-    SOUND.play(1, assets::BG_1.as_ptr());
-    SOUND.play(2, assets::BG_2.as_ptr());
-    SOUND.play(3, assets::BG_3.as_ptr());
-    SOUND.play(5, assets::BG_5.as_ptr());
+    SOUND.play(0, assets::TEST_0.as_ptr());
+    SOUND.play(1, assets::TEST_1.as_ptr());
     // gfx::load_character_data(&assets::ALL, 0);
 
     FRAME.enable_interrupts();

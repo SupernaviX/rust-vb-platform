@@ -64,16 +64,24 @@ impl Options {
 struct RawAssetFile {
     #[serde(default)]
     pub imports: Vec<PathBuf>,
-    #[serde(rename = "instrument", default)]
-    pub instruments: BTreeMap<String, RawInstrument>,
+    #[serde(rename = "waveform", default)]
+    pub waveforms: BTreeMap<String, RawWaveform>,
     #[serde(rename = "midi", default)]
     pub midis: BTreeMap<String, RawMidi>,
+    #[serde(rename = "fur", default)]
+    pub furs: BTreeMap<String, RawFur>,
 }
 
 #[derive(Deserialize, Debug)]
-pub struct RawInstrument {
-    pub waveform: Option<[u8; 32]>,
-    pub tap: Option<u8>,
+pub struct RawWaveform {
+    pub values: Option<[u8; 32]>,
+    pub fur: Option<FurWaveform>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct FurWaveform {
+    pub name: String,
+    pub wavetable: usize,
 }
 
 const fn default_loop() -> bool {
@@ -98,9 +106,25 @@ impl RawMidi {
 }
 
 #[derive(Deserialize, Debug)]
+pub struct RawFur {
+    pub file: PathBuf,
+    #[serde(rename = "loop", default = "default_loop")]
+    pub looping: bool,
+}
+impl RawFur {
+    fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
+        Self {
+            file: opts.input_path(&dir.join(self.file)),
+            ..self
+        }
+    }
+}
+
+#[derive(Deserialize, Debug)]
 pub struct RawChannel {
     pub channel: u8,
-    pub instrument: String,
+    pub waveform: Option<String>,
+    pub tap: Option<u8>,
     #[serde(flatten, default)]
     pub effects: ChannelEffects,
 }
@@ -111,24 +135,34 @@ const fn default_shift() -> f64 {
 const fn default_volume() -> f64 {
     1.0
 }
-#[derive(Deserialize, Debug, Default, Clone)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct ChannelEffects {
     #[serde(default = "default_shift")]
     pub shift: f64,
     #[serde(default = "default_volume")]
     pub volume: f64,
 }
+impl Default for ChannelEffects {
+    fn default() -> Self {
+        Self {
+            shift: default_shift(),
+            volume: default_volume(),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct RawAssets {
-    pub instruments: BTreeMap<String, RawInstrument>,
+    pub waveforms: BTreeMap<String, RawWaveform>,
     pub midis: BTreeMap<String, RawMidi>,
+    pub furs: BTreeMap<String, RawFur>,
 }
 
 pub fn parse(opts: &mut Options) -> Result<RawAssets> {
     let mut assets = RawAssets {
-        instruments: BTreeMap::new(),
+        waveforms: BTreeMap::new(),
         midis: BTreeMap::new(),
+        furs: BTreeMap::new(),
     };
     let mut files = vec![opts.config_file_path()];
     while let Some(path) = files.pop() {
@@ -143,12 +177,16 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
             files.push(opts.input_path(&dir.join(import)));
         }
 
-        for (name, instrument) in file.instruments {
-            assets.instruments.insert(name, instrument);
+        for (name, instrument) in file.waveforms {
+            assets.waveforms.insert(name, instrument);
         }
 
         for (name, midi) in file.midis {
             assets.midis.insert(name, midi.fix_files(opts, dir));
+        }
+
+        for (name, fur) in file.furs {
+            assets.furs.insert(name, fur.fix_files(opts, dir));
         }
     }
     Ok(assets)

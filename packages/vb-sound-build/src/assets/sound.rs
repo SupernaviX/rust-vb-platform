@@ -4,13 +4,13 @@ use std::{
     time::Duration,
 };
 
-use crate::config::ChannelEffects;
+use crate::{assets::Channel, config::ChannelEffects};
 
 #[derive(Debug, Default)]
 struct SoundRow {
     note: Option<NoteEvent>,
     frequency: Option<u16>,
-    instrument: Option<u8>,
+    waveform: Option<u8>,
     volume: Option<u8>,
     envelope: Option<u8>,
     tap: Option<u8>,
@@ -21,7 +21,7 @@ struct SoundRow {
 impl SoundRow {
     fn merge(self, other: Self) -> Self {
         Self {
-            instrument: other.instrument.or(self.instrument),
+            waveform: other.waveform.or(self.waveform),
             frequency: other.frequency.or(self.frequency),
             volume: other.volume.or(self.volume),
             envelope: other.envelope.or(self.envelope),
@@ -54,7 +54,7 @@ pub struct ChannelPlayer {
     now: Moment,
     note_started: Option<Moment>,
     last_key: Option<u8>,
-    last_instrument: Option<u8>,
+    last_waveform: Option<u8>,
     last_volume: Option<u8>,
     last_envelope: Option<u8>,
     last_tap: Option<u8>,
@@ -69,7 +69,7 @@ impl ChannelPlayer {
             now: Moment::START,
             note_started: None,
             last_key: None,
-            last_instrument: None,
+            last_waveform: None,
             last_volume: None,
             last_envelope: None,
             last_tap: None,
@@ -89,15 +89,15 @@ impl ChannelPlayer {
         self.timeline.entry(self.now).or_default().go_to_pattern = Some(index);
     }
 
-    pub fn set_instrument(&mut self, instrument: u8) {
-        if self.last_instrument != Some(instrument) {
-            self.timeline.entry(self.now).or_default().instrument = Some(instrument);
-            self.last_instrument = Some(instrument);
+    pub fn set_waveform(&mut self, waveform: u8) {
+        if self.last_waveform != Some(waveform) {
+            self.timeline.entry(self.now).or_default().waveform = Some(waveform);
+            self.last_waveform = Some(waveform);
         }
     }
 
     pub fn set_volume(&mut self, volume: u8) {
-        let volume = (volume as f64 * self.effects.volume / 16.0) as u8;
+        let volume = (volume as f64 * self.effects.volume) as u8;
         if self.last_volume != Some(volume) {
             self.timeline.entry(self.now).or_default().volume = Some(volume);
             self.last_volume = Some(volume);
@@ -105,7 +105,6 @@ impl ChannelPlayer {
     }
 
     pub fn set_envelope(&mut self, envelope: u8) {
-        let envelope = envelope >> 4;
         if self.last_envelope != Some(envelope) {
             self.timeline.entry(self.now).or_default().envelope = Some(envelope);
             self.last_envelope = Some(envelope);
@@ -190,6 +189,23 @@ impl ChannelPlayer {
     }
 }
 
+pub struct ChannelBuilder {
+    pub name: String,
+    pub player: ChannelPlayer,
+}
+impl ChannelBuilder {
+    pub fn build(self) -> Channel {
+        let mut encoder = EventEncoder::new();
+        for event in self.player.finish() {
+            encoder.encode(event);
+        }
+        Channel {
+            name: self.name,
+            data: encoder.finish(),
+        }
+    }
+}
+
 fn emit_events(row: SoundRow, events: &mut Vec<VBEvent>) {
     if let Some(index) = row.start_pattern {
         events.push(VBEvent::StartPattern { index });
@@ -197,10 +213,8 @@ fn emit_events(row: SoundRow, events: &mut Vec<VBEvent>) {
     if let Some(frequency) = row.frequency {
         events.push(VBEvent::SetFrequency { frequency });
     }
-    if let Some(instrument) = row.instrument {
-        events.push(VBEvent::SetWaveform {
-            waveform: instrument,
-        });
+    if let Some(waveform) = row.waveform {
+        events.push(VBEvent::SetWaveform { waveform });
     }
     if let Some(volume) = row.volume {
         events.push(VBEvent::SetVolume {
@@ -329,7 +343,7 @@ pub enum VBEvent {
     Stop,
 }
 
-pub struct EventEncoder {
+struct EventEncoder {
     bytes: Vec<u8>,
     patterns: HashMap<u8, i32>,
 }
