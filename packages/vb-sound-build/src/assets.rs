@@ -50,7 +50,6 @@ pub fn process(assets: RawAssets) -> Result<Assets> {
         let mut decoder = MidiDecoder::new(&name, &midi.file, midi.looping);
         for (name, channel) in midi.channels {
             if let Some(waveform_name) = channel.waveform {
-                println!("{waveform_name} {named_waveforms:?}");
                 let waveform = named_waveforms
                     .get(&waveform_name)
                     .unwrap_or_else(|| panic!("Unrecognized waveform"));

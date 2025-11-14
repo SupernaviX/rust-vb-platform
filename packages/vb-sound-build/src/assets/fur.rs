@@ -69,10 +69,10 @@ impl FurDecoder {
                 player.start_pattern(0);
             }
             player.set_volume(15);
-            for (order_index, pattern_index) in info.orders.iter().map(|os| os[channel]).enumerate()
+            for (order_index, pattern_index) in info.orders[channel].iter().enumerate()
             {
                 let Some(mut pattern) = patterns
-                    .get(&(channel as u8, pattern_index as u16))
+                    .get(&(channel as u8, *pattern_index as u16))
                     .copied()
                 else {
                     continue;
@@ -189,7 +189,7 @@ impl InstrumentMacroCursor {
                             tick += body.macro_speed as u64;
                         }
                     }
-                    FurMacro::End => continue,
+                    _ => continue,
                 }
             }
         }

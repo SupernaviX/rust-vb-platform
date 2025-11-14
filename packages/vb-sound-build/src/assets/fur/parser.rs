@@ -64,7 +64,7 @@ pub struct FurInfoBlock {
     #[br(count = pattern_count, args { inner: FilePtrArgs { offset: 0, inner: FurPatternBinReadArgs { pattern_length } } })]
     pub patterns: Vec<FilePtr32<FurPattern>>,
     #[br(count = orders_length)]
-    pub orders: Vec<[u8; 6]>,
+    pub orders: [Vec<u8>; 6],
     effect_columns: [u8; 6],
     channel_hide_status: [u8; 6],
     channel_collapse_status: [u8; 6],
@@ -137,7 +137,12 @@ pub enum FurFeature {
     WavetableSynthData(FurWavetableSynthData),
     #[br(pre_assert(code == b"EN"))]
     End,
-    Unknown(#[br(count = length)] Vec<u8>),
+    Unknown {
+        #[br(calc = code.to_owned())]
+        code: [u8; 2],
+        #[br(count = length)]
+        data: Vec<u8>,
+    },
 }
 
 #[derive(BinRead, Debug)]
@@ -145,6 +150,8 @@ pub enum FurFeature {
 pub enum FurMacro {
     #[br(magic = 0u8)]
     Volume(FurMacroBody<u8>),
+    #[br(magic = 1u8)]
+    Arpeggio(FurMacroBody<u8>),
     #[br(magic = 255u8)]
     End,
 }
