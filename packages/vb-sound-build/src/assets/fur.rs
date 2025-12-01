@@ -1,10 +1,10 @@
 mod parser;
 
 use anyhow::Result;
-use binrw::BinRead as _;
+use binrw::BinRead;
 use flate2::bufread::ZlibDecoder;
 use std::{
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::{BTreeMap, HashMap},
     fs,
     io::{Cursor, Read},
     path::Path,
@@ -14,7 +14,7 @@ use std::{
 use crate::{
     assets::{
         Channel,
-        fur::parser::{FurHeader, FurInfoBlock, FurInstrument, FurMacro},
+        fur::parser::{FurHeader, FurInfoBlock, FurInstrument, FurMacro, FurMacroBody},
         sound::{ChannelBuilder, ChannelPlayer, Moment},
     },
     config::ChannelEffects,
@@ -64,13 +64,12 @@ impl FurDecoder {
             let mut empty = true;
             let mut player = ChannelPlayer::new(ChannelEffects::default());
             let mut clock = Clock::new(info);
-            let mut macro_cursor = InstrumentMacroCursor::new();
+            let mut macro_cursor = MacroCursor::new();
             if self.looping {
                 player.start_pattern(0);
             }
             player.set_volume(15);
-            for (order_index, pattern_index) in info.orders[channel].iter().enumerate()
-            {
+            for (order_index, pattern_index) in info.orders[channel].iter().enumerate() {
                 let Some(mut pattern) = patterns
                     .get(&(channel as u8, *pattern_index as u16))
                     .copied()
@@ -167,55 +166,123 @@ impl Clock {
 }
 
 #[derive(Debug)]
-struct InstrumentMacroCursor {
-    effects: VecDeque<MacroEffect>,
+struct MacroBodyCursor<T> {
+    data: Vec<T>,
+    speed: u64,
+    loop_to: Option<usize>,
+    next_event: Option<(u64, usize)>,
 }
-impl InstrumentMacroCursor {
-    fn new() -> Self {
+impl<T> MacroBodyCursor<T>
+where
+    T: BinRead + Copy + std::fmt::Debug,
+    for<'a> T::Args<'a>: Default + Clone,
+{
+    fn load(body: &FurMacroBody<T>, at_tick: u64) -> Self {
+        let next_event = if body.data.is_empty() {
+            None
+        } else {
+            Some((body.macro_delay as u64 + at_tick, 0))
+        };
         Self {
-            effects: VecDeque::new(),
+            data: body.data.clone(),
+            speed: body.macro_speed as u64,
+            loop_to: body
+                .macro_loop
+                .try_into()
+                .ok()
+                .filter(|l| *l < body.data.len()),
+            next_event,
         }
     }
+
+    fn values(&mut self, until: u64) -> Vec<(u64, T)> {
+        let mut result = vec![];
+        while let Some((time, value)) = self.next_value(until) {
+            result.push((time, value));
+        }
+        result
+    }
+
+    fn next_value(&mut self, until: u64) -> Option<(u64, T)> {
+        let (time, idx) = self.next_event.take_if(|(t, _)| *t <= until)?;
+        if idx < self.data.len() - 1 {
+            self.next_event = Some((time + self.speed, idx + 1));
+        } else if let Some(loop_to) = self.loop_to {
+            self.next_event = Some((time + self.speed, loop_to.min(self.data.len() - 1)));
+        }
+        Some((time, self.data[idx]))
+    }
+}
+
+#[derive(Debug)]
+struct MacroCursor {
+    volume: Option<MacroBodyCursor<u8>>,
+    arpeggio: Option<MacroBodyCursor<i8>>,
+}
+
+impl MacroCursor {
+    fn new() -> Self {
+        Self {
+            volume: None,
+            arpeggio: None,
+        }
+    }
+
     fn load(&mut self, instr: &FurInstrument, at_tick: u64) {
-        let mut effects = BTreeMap::new();
+        self.volume = None;
+        self.arpeggio = None;
         if let Some(macros) = instr.macros() {
             for m in macros {
                 match m {
-                    FurMacro::Volume(body) => {
-                        let mut tick = at_tick + body.macro_delay as u64;
-                        for volume in &body.data {
-                            effects.entry(tick).or_insert(MacroEffect::new(tick)).volume =
-                                Some(*volume);
-                            tick += body.macro_speed as u64;
-                        }
+                    FurMacro::Volume(v) => self.volume = Some(MacroBodyCursor::load(v, at_tick)),
+                    FurMacro::Arpeggio(v) => {
+                        self.arpeggio = Some(MacroBodyCursor::load(v, at_tick))
                     }
-                    _ => continue,
+                    _ => {}
                 }
             }
         }
-        self.effects.clear();
-        self.effects.extend(effects.into_values());
     }
+
     fn effects(&mut self, until_tick: u64) -> Vec<MacroEffect> {
-        let mut effects = vec![];
-        while self.effects.front().is_some_and(|e| e.tick <= until_tick) {
-            effects.push(self.effects.pop_front().unwrap());
+        let mut effects = BTreeMap::new();
+        if let Some(vol) = self.volume.as_mut() {
+            for (tick, vol) in vol.values(until_tick) {
+                effects.entry(tick).or_insert(MacroEffect::new(tick)).volume = Some(vol);
+            }
         }
-        effects
+        if let Some(arp) = self.arpeggio.as_mut() {
+            for (tick, arp) in arp.values(until_tick) {
+                effects
+                    .entry(tick)
+                    .or_insert(MacroEffect::new(tick))
+                    .arpeggio = Some(arp);
+            }
+        }
+        effects.into_values().collect()
     }
 }
+
 #[derive(Debug)]
 struct MacroEffect {
     tick: u64,
     volume: Option<u8>,
+    arpeggio: Option<i8>,
 }
 impl MacroEffect {
     fn new(tick: u64) -> Self {
-        Self { tick, volume: None }
+        Self {
+            tick,
+            volume: None,
+            arpeggio: None,
+        }
     }
     fn apply(&self, player: &mut ChannelPlayer) {
         if let Some(volume) = self.volume {
             player.set_envelope(volume);
+        }
+        if let Some(arpeggio) = self.arpeggio {
+            player.set_pitch_shift(arpeggio as f64);
         }
     }
 }

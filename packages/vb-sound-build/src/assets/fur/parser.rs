@@ -151,7 +151,7 @@ pub enum FurMacro {
     #[br(magic = 0u8)]
     Volume(FurMacroBody<u8>),
     #[br(magic = 1u8)]
-    Arpeggio(FurMacroBody<u8>),
+    Arpeggio(FurMacroBody<i8>),
     #[br(magic = 255u8)]
     End,
 }
@@ -169,8 +169,8 @@ where
     for<'a> <T as BinRead>::Args<'a>: Default + Clone,
 {
     macro_length: u8,
-    macro_loop: u8,
-    macro_release: u8,
+    pub macro_loop: i8,
+    macro_release: i8,
     macro_mode: u8,
     macro_flags: u8,
     pub macro_delay: u8,

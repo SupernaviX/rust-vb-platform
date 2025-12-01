@@ -58,6 +58,7 @@ pub struct ChannelPlayer {
     last_volume: Option<u8>,
     last_envelope: Option<u8>,
     last_tap: Option<u8>,
+    pitch_shift: f64,
 }
 
 impl ChannelPlayer {
@@ -73,6 +74,7 @@ impl ChannelPlayer {
             last_volume: None,
             last_envelope: None,
             last_tap: None,
+            pitch_shift: 0.0,
         }
     }
 
@@ -128,7 +130,8 @@ impl ChannelPlayer {
         }
         let row = self.timeline.entry(self.now).or_default();
         if self.last_key != Some(key) {
-            let frequency = key_to_clocks(key, self.effects.shift).expect("note is too low");
+            let frequency =
+                key_to_clocks(key, self.effects.shift + self.pitch_shift).expect("note is too low");
             row.frequency = Some(frequency);
             self.last_key = Some(key);
         }
@@ -154,6 +157,18 @@ impl ChannelPlayer {
             let row = self.timeline.entry(self.now).or_default();
             assert!(row.note.is_none());
             row.note = Some(NoteEvent::Stop);
+        }
+    }
+
+    pub fn set_pitch_shift(&mut self, shift: f64) {
+        if self.pitch_shift != shift {
+            self.pitch_shift = shift;
+            if let Some(key) = self.last_key {
+                let row = self.timeline.entry(self.now).or_default();
+                let frequency = key_to_clocks(key, self.effects.shift + self.pitch_shift)
+                    .expect("note is too low");
+                row.frequency = Some(frequency);
+            }
         }
     }
 
