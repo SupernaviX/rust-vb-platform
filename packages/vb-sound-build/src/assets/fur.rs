@@ -59,7 +59,7 @@ impl FurDecoder {
             let value = &pattern.value;
             patterns.insert((value.channel, value.index), value.data.as_slice());
         }
-        let end_tick = info.orders.len() as u64 * info.pattern_length as u64 * info.speed_1 as u64;
+        let end_tick = info.orders_length as u64 * info.pattern_length as u64 * info.speed_1 as u64;
         for channel in 0..6 {
             let mut empty = true;
             let mut player = ChannelPlayer::new(ChannelEffects::default());

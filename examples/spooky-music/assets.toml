@@ -22,4 +22,3 @@ file = "assets/test.fur"
 
 [fur.chirax]
 file = "assets/chirax.fur"
-loop = false
