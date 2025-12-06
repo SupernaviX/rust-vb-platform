@@ -247,6 +247,7 @@ struct EffectCursor {
     volume: Option<MacroBodyCursor<u8>>,
     arpeggio: Option<MacroBodyCursor<i8>>,
     pitch_slide: Option<PitchSlideCursor>,
+    note_release: Option<u64>,
 }
 
 impl EffectCursor {
@@ -255,6 +256,7 @@ impl EffectCursor {
             volume: None,
             arpeggio: None,
             pitch_slide: None,
+            note_release: None,
         }
     }
 
@@ -283,7 +285,10 @@ impl EffectCursor {
                 FurEffect::PitchSlideDown(speed) => {
                     self.load_pitch_slide(info, -(speed as i16), at_tick)
                 }
-                _ => {}
+                FurEffect::NoteCut(ticks) | FurEffect::NoteRelease(ticks) => {
+                    self.note_release = Some(at_tick + ticks as u64);
+                }
+                FurEffect::Unknown(_, _) => {}
             }
         }
     }
@@ -312,6 +317,10 @@ impl EffectCursor {
                 effect.pitch = Some(effect.pitch.unwrap_or_default() + (pitch as f64 / 128.0));
             }
         }
+        if let Some(tick) = self.note_release.take_if(|t| *t <= until_tick) {
+            let effect = effects.entry(tick).or_insert(MacroEffect::new(tick));
+            effect.release = true;
+        }
         effects.into_values().collect()
     }
 }
@@ -321,6 +330,7 @@ struct MacroEffect {
     tick: u64,
     volume: Option<u8>,
     pitch: Option<f64>,
+    release: bool,
 }
 impl MacroEffect {
     fn new(tick: u64) -> Self {
@@ -328,6 +338,7 @@ impl MacroEffect {
             tick,
             volume: None,
             pitch: None,
+            release: false,
         }
     }
     fn apply(&self, player: &mut ChannelPlayer) {
@@ -336,6 +347,9 @@ impl MacroEffect {
         }
         if let Some(pitch) = self.pitch {
             player.set_pitch_shift(pitch);
+        }
+        if self.release {
+            player.stop_note();
         }
     }
 }

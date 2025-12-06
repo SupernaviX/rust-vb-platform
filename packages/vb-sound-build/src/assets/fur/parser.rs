@@ -223,6 +223,8 @@ pub struct FurPattern {
 pub enum FurEffect {
     PitchSlideUp(u8),
     PitchSlideDown(u8),
+    NoteCut(u8),
+    NoteRelease(u8),
     Unknown(u8, u8),
 }
 
@@ -240,6 +242,8 @@ fn effect_parser(bits: u8) -> binrw::BinResult<Option<FurEffect>> {
     Ok(Some(match effect {
         0x01 => FurEffect::PitchSlideUp(value),
         0x02 => FurEffect::PitchSlideDown(value),
+        0xec => FurEffect::NoteCut(value),
+        0xfc => FurEffect::NoteRelease(value),
         idk => FurEffect::Unknown(idk, value),
     }))
 }
