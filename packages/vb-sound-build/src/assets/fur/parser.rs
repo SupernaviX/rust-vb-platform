@@ -71,8 +71,11 @@ pub struct FurInfoBlock {
     channel_names: [NullString; 6],
     channel_short_names: [NullString; 6],
     song_comment: NullString,
-    #[br(pad_after = 28)]
+    #[br(pad_after = 12)]
     master_volume: f32,
+    pub linear_pitch: u8,
+    #[br(pad_after = 14)]
+    pub pitch_slide_speed: u8,
     virtual_tempo_numerator: u16,
     virtual_tempo_denominator: u16,
     first_subsong_name: NullString,
@@ -216,8 +219,15 @@ pub struct FurPattern {
     pub data: Vec<FurPatternRow>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum FurEffect {
+    PitchSlideUp(u8),
+    PitchSlideDown(u8),
+    Unknown(u8, u8),
+}
+
 #[binrw::parser(reader, endian)]
-fn effect_parser(bits: u8) -> binrw::BinResult<Option<(u8, u8)>> {
+fn effect_parser(bits: u8) -> binrw::BinResult<Option<FurEffect>> {
     if bits & 0x01 == 0 {
         return Ok(None);
     }
@@ -227,7 +237,11 @@ fn effect_parser(bits: u8) -> binrw::BinResult<Option<(u8, u8)>> {
     } else {
         0
     };
-    Ok(Some((effect, value)))
+    Ok(Some(match effect {
+        0x01 => FurEffect::PitchSlideUp(value),
+        0x02 => FurEffect::PitchSlideDown(value),
+        idk => FurEffect::Unknown(idk, value),
+    }))
 }
 
 #[binrw::parser(reader, endian)]
@@ -316,5 +330,5 @@ pub struct FurPatternRow {
     pub note: Option<u8>,
     pub instrument: Option<u8>,
     pub volume: Option<u8>,
-    pub effects: Vec<(u8, u8)>,
+    pub effects: Vec<FurEffect>,
 }

@@ -14,7 +14,7 @@ use std::{
 use crate::{
     assets::{
         Channel,
-        fur::parser::{FurHeader, FurInfoBlock, FurInstrument, FurMacro, FurMacroBody},
+        fur::parser::{FurEffect, FurHeader, FurInfoBlock, FurInstrument, FurMacro, FurMacroBody},
         sound::{ChannelBuilder, ChannelPlayer, Moment},
     },
     config::ChannelEffects,
@@ -64,7 +64,7 @@ impl FurDecoder {
             let mut empty = true;
             let mut player = ChannelPlayer::new(ChannelEffects::default());
             let mut clock = Clock::new(info);
-            let mut macro_cursor = MacroCursor::new();
+            let mut macro_cursor = EffectCursor::new();
             if self.looping {
                 player.start_pattern(0);
             }
@@ -104,10 +104,11 @@ impl FurDecoder {
                                 .expect("Unregistered wavedata");
                             player.set_waveform(*index);
                         }
-                        macro_cursor.load(instr, clock.now_tick());
-                        for effect in macro_cursor.effects(clock.now_tick()) {
-                            effect.apply(&mut player);
-                        }
+                        macro_cursor.load_instrument(instr, clock.now_tick());
+                    }
+                    macro_cursor.load_effects(info, &row.effects, clock.now_tick());
+                    for effect in macro_cursor.effects(clock.now_tick()) {
+                        effect.apply(&mut player);
                     }
                     if let Some(note) = row.note {
                         player.start_note(note - 48);
@@ -215,20 +216,49 @@ where
 }
 
 #[derive(Debug)]
-struct MacroCursor {
-    volume: Option<MacroBodyCursor<u8>>,
-    arpeggio: Option<MacroBodyCursor<i8>>,
+struct PitchSlideCursor {
+    tick: u64,
+    speed: i16,
+    value: i16,
 }
 
-impl MacroCursor {
+impl PitchSlideCursor {
+    fn new(tick: u64, speed: i16) -> Self {
+        Self {
+            tick,
+            speed,
+            value: 0,
+        }
+    }
+
+    fn values(&mut self, until_tick: u64) -> Vec<(u64, i16)> {
+        let mut result = vec![];
+        while self.tick <= until_tick {
+            result.push((self.tick, self.value));
+            self.tick += 1;
+            self.value += self.speed;
+        }
+        result
+    }
+}
+
+#[derive(Debug)]
+struct EffectCursor {
+    volume: Option<MacroBodyCursor<u8>>,
+    arpeggio: Option<MacroBodyCursor<i8>>,
+    pitch_slide: Option<PitchSlideCursor>,
+}
+
+impl EffectCursor {
     fn new() -> Self {
         Self {
             volume: None,
             arpeggio: None,
+            pitch_slide: None,
         }
     }
 
-    fn load(&mut self, instr: &FurInstrument, at_tick: u64) {
+    fn load_instrument(&mut self, instr: &FurInstrument, at_tick: u64) {
         self.volume = None;
         self.arpeggio = None;
         if let Some(macros) = instr.macros() {
@@ -244,6 +274,26 @@ impl MacroCursor {
         }
     }
 
+    fn load_effects(&mut self, info: &FurInfoBlock, effects: &[FurEffect], at_tick: u64) {
+        for &effect in effects {
+            match effect {
+                FurEffect::PitchSlideUp(speed) => {
+                    self.load_pitch_slide(info, speed as i16, at_tick)
+                }
+                FurEffect::PitchSlideDown(speed) => {
+                    self.load_pitch_slide(info, -(speed as i16), at_tick)
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn load_pitch_slide(&mut self, info: &FurInfoBlock, speed: i16, at_tick: u64) {
+        assert_eq!(info.linear_pitch, 1);
+        let speed = info.pitch_slide_speed as i16 * speed;
+        self.pitch_slide = Some(PitchSlideCursor::new(at_tick, speed));
+    }
+
     fn effects(&mut self, until_tick: u64) -> Vec<MacroEffect> {
         let mut effects = BTreeMap::new();
         if let Some(vol) = self.volume.as_mut() {
@@ -253,10 +303,13 @@ impl MacroCursor {
         }
         if let Some(arp) = self.arpeggio.as_mut() {
             for (tick, arp) in arp.values(until_tick) {
-                effects
-                    .entry(tick)
-                    .or_insert(MacroEffect::new(tick))
-                    .arpeggio = Some(arp);
+                effects.entry(tick).or_insert(MacroEffect::new(tick)).pitch = Some(arp as f64);
+            }
+        }
+        if let Some(pitch) = self.pitch_slide.as_mut() {
+            for (tick, pitch) in pitch.values(until_tick) {
+                let effect = effects.entry(tick).or_insert(MacroEffect::new(tick));
+                effect.pitch = Some(effect.pitch.unwrap_or_default() + (pitch as f64 / 128.0));
             }
         }
         effects.into_values().collect()
@@ -267,22 +320,22 @@ impl MacroCursor {
 struct MacroEffect {
     tick: u64,
     volume: Option<u8>,
-    arpeggio: Option<i8>,
+    pitch: Option<f64>,
 }
 impl MacroEffect {
     fn new(tick: u64) -> Self {
         Self {
             tick,
             volume: None,
-            arpeggio: None,
+            pitch: None,
         }
     }
     fn apply(&self, player: &mut ChannelPlayer) {
         if let Some(volume) = self.volume {
             player.set_envelope(volume);
         }
-        if let Some(arpeggio) = self.arpeggio {
-            player.set_pitch_shift(arpeggio as f64);
+        if let Some(pitch) = self.pitch {
+            player.set_pitch_shift(pitch);
         }
     }
 }
