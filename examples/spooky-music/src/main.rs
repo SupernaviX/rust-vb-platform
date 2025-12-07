@@ -21,11 +21,11 @@ fn main() {
     gfx::set_colors(32, 64, 32);
     gfx::set_bkcol(0);
     snd::load_waveforms(&assets::WAVEFORMS);
-    SOUND.play(0, assets::CHIRAX_0.as_ptr());
-    SOUND.play(1, assets::CHIRAX_1.as_ptr());
-    SOUND.play(2, assets::CHIRAX_2.as_ptr());
-    SOUND.play(4, assets::JUMP_4.as_ptr());
-    SOUND.play(5, assets::CHIRAX_5.as_ptr());
+    snd::CHANNELS[0].play(&assets::CHIRAX_0);
+    snd::CHANNELS[1].play(&assets::CHIRAX_1);
+    snd::CHANNELS[2].play(&assets::CHIRAX_2);
+    snd::CHANNELS[4].play(&assets::JUMP_4);
+    snd::CHANNELS[5].play(&assets::CHIRAX_5);
     // gfx::load_character_data(&assets::ALL, 0);
 
     FRAME.enable_interrupts();

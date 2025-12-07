@@ -2,9 +2,14 @@
 
 mod assets;
 
-use core::sync::atomic::{AtomicPtr, AtomicU32, Ordering::Relaxed};
+use core::{
+    cell::UnsafeCell,
+    ops::{Deref, DerefMut},
+    ptr::NonNull,
+    sync::atomic::{AtomicBool, AtomicPtr, Ordering::Relaxed},
+};
 
-use vb_rt::sys::{VolatilePointer, vsu};
+use vb_rt::sys::vsu;
 
 pub fn load_waveforms(waveforms: &[[u8; 32]]) {
     for (index, waveform) in waveforms.iter().enumerate() {
@@ -12,41 +17,40 @@ pub fn load_waveforms(waveforms: &[[u8; 32]]) {
     }
 }
 
-pub struct SoundPlayer {
-    channels: [ChannelState; 6],
+pub static CHANNELS: [SoundChannel; 6] =
+    [const { SoundChannel(AtomicPtr::new(core::ptr::null_mut())) }; 6];
+
+pub struct SoundChannel(AtomicPtr<u32>);
+impl SoundChannel {
+    pub fn play(&self, data: &[u32]) {
+        // setting the pointer to the address of the audio to play,
+        // plus 1 to signal that we're playing new audio.
+        let data = unsafe { data.as_ptr().byte_offset(1) };
+        self.0.store(data.cast_mut(), Relaxed);
+    }
+
+    pub fn stop(&self) {
+        self.0.store(core::ptr::null_mut(), Relaxed);
+    }
 }
 
+pub struct SoundPlayer(SyncRefCell<[ChannelState; 6]>);
 impl SoundPlayer {
     pub const fn new() -> Self {
-        Self {
-            channels: [
-                ChannelState::new(0),
-                ChannelState::new(1),
-                ChannelState::new(2),
-                ChannelState::new(3),
-                ChannelState::new(4),
-                ChannelState::new(5),
-            ],
-        }
-    }
-
-    pub fn play(&self, channel: usize, program: *const u32) {
-        assert!(!program.is_null());
-        let signalling_program = unsafe { program.cast::<u8>().add(1).cast::<u32>() };
-        self.channels[channel]
-            .program
-            .store(signalling_program.cast_mut(), Relaxed);
-    }
-
-    pub fn stop(self, channel: usize) {
-        self.channels[channel]
-            .program
-            .store(core::ptr::null_mut(), Relaxed);
+        Self(SyncRefCell::new([
+            ChannelState::new(0),
+            ChannelState::new(1),
+            ChannelState::new(2),
+            ChannelState::new(3),
+            ChannelState::new(4),
+            ChannelState::new(5),
+        ]))
     }
 
     pub fn tick(&self) {
-        for channel in &self.channels {
-            channel.tick()
+        let mut state = self.0.borrow_mut();
+        for channel in state.iter_mut() {
+            channel.tick();
         }
     }
 }
@@ -58,55 +62,56 @@ impl Default for SoundPlayer {
 }
 
 struct ChannelState {
-    channel: VolatilePointer<vsu::Channel>,
-    program: AtomicPtr<u32>,
-    waiting: AtomicU32,
+    channel: usize,
+    waiting: u32,
 }
 impl ChannelState {
     const fn new(channel: usize) -> Self {
         Self {
-            channel: vsu::CHANNELS.index(channel),
-            program: AtomicPtr::new(core::ptr::null_mut()),
-            waiting: AtomicU32::new(0),
+            channel,
+            waiting: 0,
         }
     }
 
-    fn tick(&self) {
-        let mut program = self.program.load(Relaxed).cast_const();
-        if program.is_null() {
+    pub fn tick(&mut self) {
+        let control = &CHANNELS[self.channel].0;
+        let mut ptr = control.load(Relaxed).cast_const();
+        if ptr.is_null() {
+            // Not playing audio right now.
             return;
-        } else if program.addr() & 1 != 0 {
-            program = unsafe { program.byte_offset(-1) };
-        } else {
-            let waiting = self.waiting.load(Relaxed);
-            if waiting > 0 {
-                self.waiting.store(waiting - 1, Relaxed);
-                return;
-            }
+        } else if ptr.addr() & 1 != 0 {
+            // By setting the low bit, caller requested to play new audio.
+            // Clear that bit and ignore any waits from before.
+            ptr = unsafe { ptr.byte_offset(-1) }
+        } else if self.waiting > 0 {
+            // We're waiting at least one frame before playing more.
+            self.waiting -= 1;
+            return;
         }
+        let channel = vsu::CHANNELS.index(self.channel);
         loop {
-            let event = ChannelEvent::decode(unsafe { program.read() });
+            let event = ChannelEvent::decode(unsafe { ptr.read() });
             match event {
                 ChannelEvent::Done => {
-                    self.channel
+                    channel
                         .interval()
                         .write(vsu::IntervalData::new().with_enabled(false));
-                    self.program.store(core::ptr::null_mut(), Relaxed);
+                    control.store(core::ptr::null_mut(), Relaxed);
                     return;
                 }
                 ChannelEvent::Wait { frames } => {
-                    program = unsafe { program.offset(1) };
-                    self.program.store(program.cast_mut(), Relaxed);
-                    self.waiting.store(frames, Relaxed);
+                    ptr = unsafe { ptr.offset(1) };
+                    control.store(ptr.cast_mut(), Relaxed);
+                    self.waiting = frames;
                     return;
                 }
                 ChannelEvent::Write { offset, value } => {
-                    program = unsafe { program.offset(1) };
-                    let field = unsafe { self.channel.field::<u8>(offset as usize) };
+                    ptr = unsafe { ptr.offset(1) };
+                    let field = unsafe { channel.field::<u8>(offset as usize) };
                     field.write(value);
                 }
                 ChannelEvent::Jump { offset } => {
-                    program = unsafe { program.offset(offset) };
+                    ptr = unsafe { ptr.offset(offset) };
                 }
             }
         }
@@ -145,5 +150,53 @@ impl ChannelEvent {
             }
             _ => Self::Done,
         }
+    }
+}
+
+struct SyncRefCell<T> {
+    value: UnsafeCell<T>,
+    taken: AtomicBool,
+}
+impl<T> SyncRefCell<T> {
+    const fn new(value: T) -> Self {
+        Self {
+            value: UnsafeCell::new(value),
+            taken: AtomicBool::new(false),
+        }
+    }
+    fn borrow_mut(&self) -> RefMut<'_, T> {
+        if self.taken.load(Relaxed) {
+            panic!("borrowed twice");
+        }
+        self.taken.store(true, Relaxed);
+        // SAFETY: UnsafeCell's content can't be null
+        let value = unsafe { NonNull::new_unchecked(self.value.get()) };
+        RefMut {
+            value,
+            taken: &self.taken,
+        }
+    }
+}
+unsafe impl<T> Sync for SyncRefCell<T> {}
+
+struct RefMut<'a, T> {
+    value: NonNull<T>,
+    taken: &'a AtomicBool,
+}
+
+impl<T> Deref for RefMut<'_, T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.value.as_ref() }
+    }
+}
+impl<T> DerefMut for RefMut<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { self.value.as_mut() }
+    }
+}
+impl<T> Drop for RefMut<'_, T> {
+    fn drop(&mut self) {
+        self.taken.store(false, Relaxed);
     }
 }
