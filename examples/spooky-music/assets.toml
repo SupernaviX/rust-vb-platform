@@ -1,7 +1,7 @@
-[waveform.lead]
-fur = { name = "test", wavetable = 0 }
-[waveform.bass]
-fur = { name = "test", wavetable = 1 }
+#[waveform.lead]
+#fur = { name = "test", wavetable = 0 }
+#[waveform.bass]
+#fur = { name = "test", wavetable = 1 }
 [waveform.a]
 fur = { name = "chirax", wavetable = 0 }
 [waveform.b]
@@ -9,16 +9,15 @@ fur = { name = "chirax", wavetable = 1 }
 [waveform.c]
 fur = { name = "chirax", wavetable = 2 }
 
-#[midi.bg]
-#file = "assets/donjon.mid"
-#channel.0 = { channel = 0, waveform = "square", shift = +0.045, volume = 0.5 }
-#channel.1 = { channel = 0, waveform = "square", shift = -0.045, volume = 0.5 }
-#channel.2 = { channel = 1, waveform = "square" }
-#channel.3 = { channel = 2, waveform = "square" }
-#channel.5 = { channel = 3, tap = 0 }
+#[fur.test]
+#file = "assets/test.fur"
 
-[fur.test]
-file = "assets/test.fur"
+[waveform.square]
+fur = { name = "jump", wavetable = 0 }
 
 [fur.chirax]
 file = "assets/chirax.fur"
+
+[fur.jump]
+file = "assets/jump2.fur"
+loop = false

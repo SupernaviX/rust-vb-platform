@@ -24,6 +24,7 @@ fn main() {
     SOUND.play(0, assets::CHIRAX_0.as_ptr());
     SOUND.play(1, assets::CHIRAX_1.as_ptr());
     SOUND.play(2, assets::CHIRAX_2.as_ptr());
+    SOUND.play(4, assets::JUMP_4.as_ptr());
     SOUND.play(5, assets::CHIRAX_5.as_ptr());
     // gfx::load_character_data(&assets::ALL, 0);
 

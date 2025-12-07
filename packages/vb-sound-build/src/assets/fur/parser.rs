@@ -225,6 +225,7 @@ pub enum FurEffect {
     PitchSlideDown(u8),
     NoteCut(u8),
     NoteRelease(u8),
+    StopSong,
     Unknown(u8, u8),
 }
 
@@ -244,6 +245,7 @@ fn effect_parser(bits: u8) -> binrw::BinResult<Option<FurEffect>> {
         0x02 => FurEffect::PitchSlideDown(value),
         0xec => FurEffect::NoteCut(value),
         0xfc => FurEffect::NoteRelease(value),
+        0xff => FurEffect::StopSong,
         idk => FurEffect::Unknown(idk, value),
     }))
 }
@@ -335,4 +337,11 @@ pub struct FurPatternRow {
     pub instrument: Option<u8>,
     pub volume: Option<u8>,
     pub effects: Vec<FurEffect>,
+}
+impl FurPatternRow {
+    pub fn should_stop_song(&self) -> bool {
+        self.effects
+            .iter()
+            .any(|e| matches!(e, FurEffect::StopSong))
+    }
 }

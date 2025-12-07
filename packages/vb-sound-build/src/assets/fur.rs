@@ -59,17 +59,21 @@ impl FurDecoder {
             let value = &pattern.value;
             patterns.insert((value.channel, value.index), value.data.as_slice());
         }
-        let end_tick = info.orders_length as u64 * info.pattern_length as u64 * info.speed_1 as u64;
+        let mut end_tick =
+            info.orders_length as u64 * info.pattern_length as u64 * info.speed_1 as u64;
         for channel in 0..6 {
             let mut empty = true;
             let mut player = ChannelPlayer::new(ChannelEffects::default());
+            player.set_volume(15);
+            player.set_envelope(15);
             let mut clock = Clock::new(info);
             let mut macro_cursor = EffectCursor::new();
+            player.advance_time(clock.now());
             if self.looping {
                 player.start_pattern(0);
             }
-            player.set_volume(15);
-            for (order_index, pattern_index) in info.orders[channel].iter().enumerate() {
+            'play_loop: for (order_index, pattern_index) in info.orders[channel].iter().enumerate()
+            {
                 let Some(mut pattern) = patterns
                     .get(&(channel as u8, *pattern_index as u16))
                     .copied()
@@ -90,20 +94,26 @@ impl FurDecoder {
                     clock.advance(target_tick);
                     player.advance_time(clock.now());
 
+                    if row.should_stop_song() {
+                        end_tick = clock.now_tick();
+                        break 'play_loop;
+                    }
+
                     if let Some(volume) = row.volume {
                         player.set_volume(volume);
                     }
                     if let Some(instrument) = row.instrument {
                         let instr = &info.instruments[instrument as usize].value;
-                        if let Some(waveform) = instr.wavetable_synth_data() {
-                            let wavedata = self
-                                .wavetable(waveform.first_wave as usize)
-                                .expect("Invalid wavetable");
-                            let index = waveform_indices
-                                .get(&wavedata)
-                                .expect("Unregistered wavedata");
-                            player.set_waveform(*index);
-                        }
+                        let wavedata_index = if let Some(synth) = instr.wavetable_synth_data() {
+                            synth.first_wave as usize
+                        } else {
+                            0
+                        };
+                        let wavedata = self.wavetable(wavedata_index).expect("Invalid wavetable");
+                        let index = waveform_indices
+                            .get(&wavedata)
+                            .expect("Unregistered wavedata");
+                        player.set_waveform(*index);
                         macro_cursor.load_instrument(instr, clock.now_tick());
                     }
                     macro_cursor.load_effects(info, &row.effects, clock.now_tick());
@@ -288,7 +298,10 @@ impl EffectCursor {
                 FurEffect::NoteCut(ticks) | FurEffect::NoteRelease(ticks) => {
                     self.note_release = Some(at_tick + ticks as u64);
                 }
-                FurEffect::Unknown(_, _) => {}
+                FurEffect::Unknown(effect, value) => {
+                    panic!("unknown effect: {effect:02x}{value:02x}");
+                }
+                _ => {}
             }
         }
     }

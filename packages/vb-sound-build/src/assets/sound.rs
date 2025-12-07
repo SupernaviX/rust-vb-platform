@@ -50,8 +50,9 @@ const INTERVAL_UNIT: Duration = Duration::from_nanos(3_840_246);
 pub struct ChannelPlayer {
     effects: ChannelEffects,
     noise: bool,
+    init: SoundRow,
     timeline: BTreeMap<Moment, SoundRow>,
-    now: Moment,
+    now: Option<Moment>,
     note_started: Option<Moment>,
     last_key: Option<u8>,
     last_waveform: Option<u8>,
@@ -66,8 +67,9 @@ impl ChannelPlayer {
         Self {
             effects,
             noise: false,
+            init: SoundRow::default(),
             timeline: BTreeMap::new(),
-            now: Moment::START,
+            now: None,
             note_started: None,
             last_key: None,
             last_waveform: None,
@@ -79,21 +81,21 @@ impl ChannelPlayer {
     }
 
     pub fn advance_time(&mut self, now: Moment) {
-        assert!(self.now <= now);
-        self.now = now;
+        assert!(self.now.is_none_or(|n| n <= now));
+        self.now = Some(now);
     }
 
     pub fn start_pattern(&mut self, index: u8) {
-        self.timeline.entry(self.now).or_default().start_pattern = Some(index);
+        self.current_row().start_pattern = Some(index);
     }
 
     pub fn go_to_pattern(&mut self, index: u8) {
-        self.timeline.entry(self.now).or_default().go_to_pattern = Some(index);
+        self.current_row().go_to_pattern = Some(index);
     }
 
     pub fn set_waveform(&mut self, waveform: u8) {
         if self.last_waveform != Some(waveform) {
-            self.timeline.entry(self.now).or_default().waveform = Some(waveform);
+            self.current_row().waveform = Some(waveform);
             self.last_waveform = Some(waveform);
         }
     }
@@ -101,14 +103,14 @@ impl ChannelPlayer {
     pub fn set_volume(&mut self, volume: u8) {
         let volume = (volume as f64 * self.effects.volume) as u8;
         if self.last_volume != Some(volume) {
-            self.timeline.entry(self.now).or_default().volume = Some(volume);
+            self.current_row().volume = Some(volume);
             self.last_volume = Some(volume);
         }
     }
 
     pub fn set_envelope(&mut self, envelope: u8) {
         if self.last_envelope != Some(envelope) {
-            self.timeline.entry(self.now).or_default().envelope = Some(envelope);
+            self.current_row().envelope = Some(envelope);
             self.last_envelope = Some(envelope);
         }
     }
@@ -116,7 +118,7 @@ impl ChannelPlayer {
     pub fn set_tap(&mut self, tap: u8) {
         self.noise = true;
         if self.last_tap != Some(tap) {
-            self.timeline.entry(self.now).or_default().tap = Some(tap);
+            self.current_row().tap = Some(tap);
             self.last_tap = Some(tap);
         }
     }
@@ -128,22 +130,23 @@ impl ChannelPlayer {
         if self.noise {
             key = (key as u16 * 3 / 4) as u8;
         }
-        let row = self.timeline.entry(self.now).or_default();
         if self.last_key != Some(key) {
             let frequency =
                 key_to_clocks(key, self.effects.shift + self.pitch_shift).expect("note is too low");
-            row.frequency = Some(frequency);
+            self.current_row().frequency = Some(frequency);
             self.last_key = Some(key);
         }
-        row.note = Some(NoteEvent::Start(NoteStart { interval: None }));
-        self.note_started = Some(self.now);
+        self.current_row().note = Some(NoteEvent::Start(NoteStart { interval: None }));
+        self.note_started = self.now;
     }
 
     pub fn stop_note(&mut self) {
         let Some(started) = self.note_started.take() else {
             panic!("stopped a note which was never started");
         };
-        let interval_units = (self.now - started).div_duration_f32(INTERVAL_UNIT).round() as u8;
+        let interval_units = (self.now.unwrap_or(Moment::START) - started)
+            .div_duration_f32(INTERVAL_UNIT)
+            .round() as u8;
         if interval_units < 32 {
             let Some(NoteEvent::Start(note)) = self
                 .timeline
@@ -154,7 +157,7 @@ impl ChannelPlayer {
             };
             note.interval = Some(interval_units - 1);
         } else {
-            let row = self.timeline.entry(self.now).or_default();
+            let row = self.current_row();
             assert!(row.note.is_none());
             row.note = Some(NoteEvent::Stop);
         }
@@ -164,16 +167,16 @@ impl ChannelPlayer {
         if self.pitch_shift != shift {
             self.pitch_shift = shift;
             if let Some(key) = self.last_key {
-                let row = self.timeline.entry(self.now).or_default();
                 let frequency = key_to_clocks(key, self.effects.shift + self.pitch_shift)
                     .expect("note is too low");
-                row.frequency = Some(frequency);
+                self.current_row().frequency = Some(frequency);
             }
         }
     }
 
     pub fn finish(self) -> Vec<VBEvent> {
         let mut events = vec![];
+        emit_events(self.init, &mut events);
         let mut current_row = SoundRow::default();
         let mut current_frame = 0;
         for (moment, row) in self.timeline {
@@ -195,12 +198,22 @@ impl ChannelPlayer {
             }
         }
         emit_events(current_row, &mut events);
-        let frames = self.now.last_frame() - current_frame;
+        let frames = self
+            .now
+            .map(|n| n.last_frame() - current_frame)
+            .unwrap_or_default();
         if frames > 0 {
             events.push(VBEvent::Wait { frames });
         }
         events.push(VBEvent::Stop);
         events
+    }
+
+    fn current_row(&mut self) -> &mut SoundRow {
+        match self.now {
+            Some(now) => self.timeline.entry(now).or_default(),
+            None => &mut self.init,
+        }
     }
 }
 
