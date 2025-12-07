@@ -24,13 +24,22 @@ fn main() {
     snd::CHANNELS[0].play(&assets::CHIRAX_0);
     snd::CHANNELS[1].play(&assets::CHIRAX_1);
     snd::CHANNELS[2].play(&assets::CHIRAX_2);
-    snd::CHANNELS[4].play(&assets::JUMP_4);
     snd::CHANNELS[5].play(&assets::CHIRAX_5);
     // gfx::load_character_data(&assets::ALL, 0);
 
     FRAME.enable_interrupts();
 
+    let mut was_pressed = false;
     loop {
+        let pressed = vb_rt::sys::hardware::read_controller().a();
+        if pressed && !was_pressed {
+            if snd::CHANNELS[4].playing() {
+                snd::CHANNELS[3].play(&assets::JUMP_4);
+            } else {
+                snd::CHANNELS[4].play(&assets::JUMP_4);
+            }
+        }
+        was_pressed = pressed;
         FRAME.wait_for_new_frame();
     }
 }

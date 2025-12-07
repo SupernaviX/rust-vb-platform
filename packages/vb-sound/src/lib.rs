@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(clippy::manual_dangling_ptr)]
 
 mod assets;
 
@@ -25,12 +26,18 @@ impl SoundChannel {
     pub fn play(&self, data: &[u32]) {
         // setting the pointer to the address of the audio to play,
         // plus 1 to signal that we're playing new audio.
-        let data = unsafe { data.as_ptr().byte_offset(1) };
+        let data = data.as_ptr().map_addr(|a| a | 0x00000001);
         self.0.store(data.cast_mut(), Relaxed);
     }
 
+    pub fn playing(&self) -> bool {
+        !self.0.load(Relaxed).is_null()
+    }
+
     pub fn stop(&self) {
-        self.0.store(core::ptr::null_mut(), Relaxed);
+        // setting the pointer to 1 to inidcate that we are just starting to play nothing
+        let data = 0x00000001 as *mut u32;
+        self.0.store(data, Relaxed);
     }
 }
 
@@ -63,55 +70,68 @@ impl Default for SoundPlayer {
 
 struct ChannelState {
     channel: usize,
+    playing: *const u32,
     waiting: u32,
 }
 impl ChannelState {
     const fn new(channel: usize) -> Self {
         Self {
             channel,
+            playing: core::ptr::null(),
             waiting: 0,
         }
     }
 
     pub fn tick(&mut self) {
         let control = &CHANNELS[self.channel].0;
-        let mut ptr = control.load(Relaxed).cast_const();
-        if ptr.is_null() {
+        let channel = vsu::CHANNELS.index(self.channel);
+
+        let cmd = control.load(Relaxed).cast_const();
+        let change_requested = cmd.addr() & 1 != 0;
+        if change_requested {
+            self.playing = cmd.map_addr(|a| a & 0x07fffffc);
+            self.waiting = 0;
+            if self.playing.is_null() {
+                // SILENCE!!!
+                channel.env_lo().write(vsu::EnvelopeLowData::new());
+                control.store(core::ptr::null_mut(), Relaxed);
+            } else {
+                let playing_something =
+                    unsafe { core::ptr::null_mut::<u32>().byte_offset(0x08000000) };
+                control.store(playing_something, Relaxed);
+            }
+        }
+        if self.playing.is_null() {
             // Not playing audio right now.
             return;
-        } else if ptr.addr() & 1 != 0 {
-            // By setting the low bit, caller requested to play new audio.
-            // Clear that bit and ignore any waits from before.
-            ptr = unsafe { ptr.byte_offset(-1) }
         } else if self.waiting > 0 {
             // We're waiting at least one frame before playing more.
             self.waiting -= 1;
             return;
         }
-        let channel = vsu::CHANNELS.index(self.channel);
         loop {
-            let event = ChannelEvent::decode(unsafe { ptr.read() });
+            let event = ChannelEvent::decode(unsafe { self.playing.read() });
             match event {
                 ChannelEvent::Done => {
                     channel
                         .interval()
                         .write(vsu::IntervalData::new().with_enabled(false));
+                    self.playing = core::ptr::null_mut();
                     control.store(core::ptr::null_mut(), Relaxed);
                     return;
                 }
                 ChannelEvent::Wait { frames } => {
-                    ptr = unsafe { ptr.offset(1) };
-                    control.store(ptr.cast_mut(), Relaxed);
+                    self.playing = unsafe { self.playing.offset(1) };
                     self.waiting = frames;
                     return;
                 }
                 ChannelEvent::Write { offset, value } => {
-                    ptr = unsafe { ptr.offset(1) };
+                    self.playing = unsafe { self.playing.offset(1) };
                     let field = unsafe { channel.field::<u8>(offset as usize) };
                     field.write(value);
                 }
                 ChannelEvent::Jump { offset } => {
-                    ptr = unsafe { ptr.offset(offset) };
+                    self.playing = unsafe { self.playing.offset(offset) };
                 }
             }
         }
