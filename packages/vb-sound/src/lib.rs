@@ -111,7 +111,7 @@ impl ChannelState {
                 self.paused = false;
                 if self.playing.is_null() {
                     // SILENCE!!!
-                    channel.env_lo().write(vsu::EnvelopeLowData::new());
+                    channel.interval().write(vsu::IntervalData::new());
                     control.store(core::ptr::null_mut(), Relaxed);
                 } else {
                     let playing_something = 0x08000000 as *mut u32;
