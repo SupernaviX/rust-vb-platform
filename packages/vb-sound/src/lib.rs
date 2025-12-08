@@ -35,8 +35,20 @@ impl SoundChannel {
     }
 
     pub fn stop(&self) {
-        // setting the pointer to 1 to inidcate that we are just starting to play nothing
+        // setting the pointer to 1 to signal that we are just starting to play nothing
         let data = 0x00000001 as *mut u32;
+        self.0.store(data, Relaxed);
+    }
+
+    pub fn pause(&self) {
+        // setting the pointer to 2 to signal that we're pausing
+        let data = 0x00000002 as *mut u32;
+        self.0.store(data, Relaxed);
+    }
+
+    pub fn resume(&self) {
+        // setting the pointer to 3 to signal that we're resumin
+        let data = 0x00000003 as *mut u32;
         self.0.store(data, Relaxed);
     }
 }
@@ -72,6 +84,8 @@ struct ChannelState {
     channel: usize,
     playing: *const u32,
     waiting: u32,
+    paused: bool,
+    old_env_lo: u8,
 }
 impl ChannelState {
     const fn new(channel: usize) -> Self {
@@ -79,6 +93,8 @@ impl ChannelState {
             channel,
             playing: core::ptr::null(),
             waiting: 0,
+            paused: false,
+            old_env_lo: 0,
         }
     }
 
@@ -87,21 +103,40 @@ impl ChannelState {
         let channel = vsu::CHANNELS.index(self.channel);
 
         let cmd = control.load(Relaxed).cast_const();
-        let change_requested = cmd.addr() & 1 != 0;
-        if change_requested {
-            self.playing = cmd.map_addr(|a| a & 0x07fffffc);
-            self.waiting = 0;
-            if self.playing.is_null() {
-                // SILENCE!!!
+        match cmd.addr() & 0x3 {
+            1 => {
+                // play/stop
+                self.playing = cmd.map_addr(|a| a & 0x07fffffc);
+                self.waiting = 0;
+                self.paused = false;
+                if self.playing.is_null() {
+                    // SILENCE!!!
+                    channel.env_lo().write(vsu::EnvelopeLowData::new());
+                    control.store(core::ptr::null_mut(), Relaxed);
+                } else {
+                    let playing_something = 0x08000000 as *mut u32;
+                    control.store(playing_something, Relaxed);
+                }
+            }
+            2 => {
+                // pause
+                self.paused = true;
                 channel.env_lo().write(vsu::EnvelopeLowData::new());
                 control.store(core::ptr::null_mut(), Relaxed);
-            } else {
-                let playing_something =
-                    unsafe { core::ptr::null_mut::<u32>().byte_offset(0x08000000) };
-                control.store(playing_something, Relaxed);
             }
+            3 => {
+                // resume
+                self.paused = false;
+                if !self.playing.is_null() {
+                    channel.env_lo().cast::<u8>().write(self.old_env_lo);
+                    let playing_something = 0x08000000 as *mut u32;
+                    control.store(playing_something, Relaxed);
+                }
+            }
+            _ => { /* do nothing */ }
         }
-        if self.playing.is_null() {
+
+        if self.paused || self.playing.is_null() {
             // Not playing audio right now.
             return;
         } else if self.waiting > 0 {
@@ -129,6 +164,10 @@ impl ChannelState {
                     self.playing = unsafe { self.playing.offset(1) };
                     let field = unsafe { channel.field::<u8>(offset as usize) };
                     field.write(value);
+                    if offset == 0x10 {
+                        // track old envelope in case we pause
+                        self.old_env_lo = value;
+                    }
                 }
                 ChannelEvent::Jump { offset } => {
                     self.playing = unsafe { self.playing.offset(offset) };

@@ -29,17 +29,34 @@ fn main() {
 
     FRAME.enable_interrupts();
 
-    let mut was_pressed = false;
+    let mut was_a_pressed = false;
+    let mut was_sta_pressed = false;
     loop {
-        let pressed = vb_rt::sys::hardware::read_controller().a();
-        if pressed && !was_pressed {
+        let pressed = vb_rt::sys::hardware::read_controller();
+        let a_pressed = pressed.a();
+        if a_pressed && !was_a_pressed {
             if snd::CHANNELS[4].playing() {
                 snd::CHANNELS[3].play(&assets::JUMP_4);
             } else {
                 snd::CHANNELS[4].play(&assets::JUMP_4);
             }
         }
-        was_pressed = pressed;
+        was_a_pressed = a_pressed;
+        let sta_pressed = pressed.sta();
+        for ch in [
+            &snd::CHANNELS[0],
+            &snd::CHANNELS[1],
+            &snd::CHANNELS[2],
+            &snd::CHANNELS[5],
+        ] {
+            if sta_pressed && !was_sta_pressed {
+                ch.pause();
+            }
+            if !sta_pressed && was_sta_pressed {
+                ch.resume();
+            }
+        }
+        was_sta_pressed = sta_pressed;
         FRAME.wait_for_new_frame();
     }
 }

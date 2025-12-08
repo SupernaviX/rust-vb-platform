@@ -28,6 +28,11 @@ impl<T: Copy> VolatilePointer<T> {
         VolatilePointer(inner)
     }
 
+    pub const fn cast<U: Copy>(self) -> VolatilePointer<U> {
+        assert!(size_of::<T>() == size_of::<U>());
+        VolatilePointer(self.0.cast())
+    }
+
     pub fn read(self) -> T {
         // SAFETY: constructor guarantees that address is valid and aligned
         unsafe { self.0.read_volatile() }
