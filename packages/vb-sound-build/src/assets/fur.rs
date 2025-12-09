@@ -94,11 +94,6 @@ impl FurDecoder {
                     clock.advance(target_tick);
                     player.advance_time(clock.now());
 
-                    if row.should_stop_song() {
-                        end_tick = clock.now_tick();
-                        break 'play_loop;
-                    }
-
                     if let Some(volume) = row.volume {
                         player.set_volume(volume);
                     }
@@ -123,6 +118,19 @@ impl FurDecoder {
                     if let Some(note) = row.note {
                         player.start_note(note - 48);
                         empty = false;
+                    }
+
+                    if row.should_stop_song() {
+                        let target_tick =
+                            pattern_start_tick + ((row.index + 1) * info.speed_1 as u64);
+                        for effect in macro_cursor.effects(target_tick) {
+                            clock.advance(effect.tick);
+                            player.advance_time(clock.now());
+                            effect.apply(&mut player);
+                        }
+                        clock.advance(target_tick);
+                        end_tick = clock.now_tick();
+                        break 'play_loop;
                     }
                 }
             }
@@ -250,7 +258,7 @@ impl ArpeggioEffectCursor {
             let value = match self.offset {
                 2 => self.y,
                 1 => self.x,
-                _ => 0
+                _ => 0,
             };
             result.push((self.tick, value as i16));
             self.tick += self.speed as u64;
@@ -260,7 +268,6 @@ impl ArpeggioEffectCursor {
             }
         }
         result
-
     }
 }
 
@@ -359,7 +366,12 @@ impl EffectCursor {
     }
 
     fn load_arpeggio(&mut self, x: u8, y: u8, at_tick: u64) {
-        self.arpeggio_effect = Some(ArpeggioEffectCursor::new(at_tick, self.arpeggio_speed, x, y));
+        self.arpeggio_effect = Some(ArpeggioEffectCursor::new(
+            at_tick,
+            self.arpeggio_speed,
+            x,
+            y,
+        ));
     }
 
     fn load_pitch_slide(&mut self, info: &FurInfoBlock, speed: i16, at_tick: u64) {
