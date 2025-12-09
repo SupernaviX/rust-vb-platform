@@ -35,7 +35,7 @@ impl MidiDecoder {
     }
 
     pub fn pcm_channel(&mut self, name: &str, index: u8, waveform: u8, effects: &ChannelEffects) {
-        let mut player = ChannelPlayer::new(effects.clone());
+        let mut player = ChannelPlayer::new(effects.clone(), true);
         player.set_waveform(waveform);
         player.set_volume(normalize_volume(127));
         player.set_envelope(normalize_volume(127));
@@ -49,7 +49,7 @@ impl MidiDecoder {
     }
 
     pub fn noise_channel(&mut self, name: &str, index: u8, tap: u8, effects: &ChannelEffects) {
-        let mut player = ChannelPlayer::new(effects.clone());
+        let mut player = ChannelPlayer::new(effects.clone(), true);
         player.set_tap(tap);
         player.set_volume(normalize_volume(127));
         player.set_envelope(normalize_volume(127));

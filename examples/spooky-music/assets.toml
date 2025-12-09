@@ -19,5 +19,5 @@ fur = { name = "hurt", wavetable = 0 }
 file = "assets/chirax.fur"
 
 [fur.hurt]
-file = "assets/hurt.fur"
+file = "assets/chirax_attack.fur"
 loop = false

@@ -50,6 +50,7 @@ const INTERVAL_UNIT: Duration = Duration::from_nanos(3_840_246);
 pub struct ChannelPlayer {
     effects: ChannelEffects,
     noise: bool,
+    use_interval: bool,
     init: SoundRow,
     timeline: BTreeMap<Moment, SoundRow>,
     now: Option<Moment>,
@@ -63,10 +64,11 @@ pub struct ChannelPlayer {
 }
 
 impl ChannelPlayer {
-    pub fn new(effects: ChannelEffects) -> Self {
+    pub fn new(effects: ChannelEffects, use_interval: bool) -> Self {
         Self {
             effects,
             noise: false,
+            use_interval,
             init: SoundRow::default(),
             timeline: BTreeMap::new(),
             now: None,
@@ -147,7 +149,7 @@ impl ChannelPlayer {
         let interval_units = (self.now.unwrap_or(Moment::START) - started)
             .div_duration_f32(INTERVAL_UNIT)
             .round() as u8;
-        if interval_units < 32 {
+        if self.use_interval && interval_units < 32 {
             let Some(NoteEvent::Start(note)) = self
                 .timeline
                 .get_mut(&started)

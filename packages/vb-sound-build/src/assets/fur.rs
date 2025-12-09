@@ -63,7 +63,7 @@ impl FurDecoder {
             info.orders_length as u64 * info.pattern_length as u64 * info.speed_1 as u64;
         for channel in 0..6 {
             let mut empty = true;
-            let mut player = ChannelPlayer::new(ChannelEffects::default());
+            let mut player = ChannelPlayer::new(ChannelEffects::default(), false);
             player.set_volume(15);
             player.set_envelope(15);
             let mut clock = Clock::new(info);
