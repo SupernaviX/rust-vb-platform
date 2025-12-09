@@ -221,8 +221,10 @@ pub struct FurPattern {
 
 #[derive(Debug, Clone, Copy)]
 pub enum FurEffect {
+    Arpeggio(u8, u8),
     PitchSlideUp(u8),
     PitchSlideDown(u8),
+    ArpeggioSpeed(u8),
     NoteCut(u8),
     NoteRelease(u8),
     StopSong,
@@ -241,8 +243,10 @@ fn effect_parser(bits: u8) -> binrw::BinResult<Option<FurEffect>> {
         0
     };
     Ok(Some(match effect {
+        0x00 => FurEffect::Arpeggio(value >> 4, value & 0xf),
         0x01 => FurEffect::PitchSlideUp(value),
         0x02 => FurEffect::PitchSlideDown(value),
+        0xe0 => FurEffect::ArpeggioSpeed(value),
         0xec => FurEffect::NoteCut(value),
         0xfc => FurEffect::NoteRelease(value),
         0xff => FurEffect::StopSong,

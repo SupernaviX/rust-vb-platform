@@ -13,11 +13,11 @@ fur = { name = "chirax", wavetable = 2 }
 #file = "assets/test.fur"
 
 [waveform.square]
-fur = { name = "jump", wavetable = 0 }
+fur = { name = "hurt", wavetable = 0 }
 
 [fur.chirax]
 file = "assets/chirax.fur"
 
-[fur.jump]
-file = "assets/jump2.fur"
+[fur.hurt]
+file = "assets/hurt.fur"
 loop = false

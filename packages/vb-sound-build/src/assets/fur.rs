@@ -226,6 +226,45 @@ where
 }
 
 #[derive(Debug)]
+struct ArpeggioEffectCursor {
+    tick: u64,
+    speed: u8,
+    offset: u8,
+    x: u8,
+    y: u8,
+}
+impl ArpeggioEffectCursor {
+    fn new(tick: u64, speed: u8, x: u8, y: u8) -> Self {
+        Self {
+            tick,
+            speed,
+            offset: 0,
+            x,
+            y,
+        }
+    }
+
+    fn values(&mut self, until_tick: u64) -> Vec<(u64, i16)> {
+        let mut result = vec![];
+        while self.tick <= until_tick {
+            let value = match self.offset {
+                2 => self.y,
+                1 => self.x,
+                _ => 0
+            };
+            result.push((self.tick, value as i16));
+            self.tick += self.speed as u64;
+            self.offset += 1;
+            if self.offset > 2 {
+                self.offset = 0
+            }
+        }
+        result
+
+    }
+}
+
+#[derive(Debug)]
 struct PitchSlideCursor {
     tick: u64,
     speed: i16,
@@ -256,6 +295,8 @@ impl PitchSlideCursor {
 struct EffectCursor {
     volume: Option<MacroBodyCursor<u8>>,
     arpeggio: Option<MacroBodyCursor<i8>>,
+    arpeggio_effect: Option<ArpeggioEffectCursor>,
+    arpeggio_speed: u8,
     pitch_slide: Option<PitchSlideCursor>,
     note_release: Option<u64>,
 }
@@ -265,6 +306,8 @@ impl EffectCursor {
         Self {
             volume: None,
             arpeggio: None,
+            arpeggio_effect: None,
+            arpeggio_speed: 1,
             pitch_slide: None,
             note_release: None,
         }
@@ -289,11 +332,20 @@ impl EffectCursor {
     fn load_effects(&mut self, info: &FurInfoBlock, effects: &[FurEffect], at_tick: u64) {
         for &effect in effects {
             match effect {
+                FurEffect::Arpeggio(x, y) => {
+                    self.load_arpeggio(x, y, at_tick);
+                }
                 FurEffect::PitchSlideUp(speed) => {
                     self.load_pitch_slide(info, speed as i16, at_tick)
                 }
                 FurEffect::PitchSlideDown(speed) => {
                     self.load_pitch_slide(info, -(speed as i16), at_tick)
+                }
+                FurEffect::ArpeggioSpeed(speed) => {
+                    self.arpeggio_speed = speed;
+                    if let Some(arp) = self.arpeggio_effect.as_mut() {
+                        arp.speed = speed;
+                    }
                 }
                 FurEffect::NoteCut(ticks) | FurEffect::NoteRelease(ticks) => {
                     self.note_release = Some(at_tick + ticks as u64);
@@ -304,6 +356,10 @@ impl EffectCursor {
                 _ => {}
             }
         }
+    }
+
+    fn load_arpeggio(&mut self, x: u8, y: u8, at_tick: u64) {
+        self.arpeggio_effect = Some(ArpeggioEffectCursor::new(at_tick, self.arpeggio_speed, x, y));
     }
 
     fn load_pitch_slide(&mut self, info: &FurInfoBlock, speed: i16, at_tick: u64) {
@@ -322,6 +378,12 @@ impl EffectCursor {
         if let Some(arp) = self.arpeggio.as_mut() {
             for (tick, arp) in arp.values(until_tick) {
                 effects.entry(tick).or_insert(MacroEffect::new(tick)).pitch = Some(arp as f64);
+            }
+        }
+        if let Some(arp) = self.arpeggio_effect.as_mut() {
+            for (tick, arp) in arp.values(until_tick) {
+                let effect = effects.entry(tick).or_insert(MacroEffect::new(tick));
+                effect.pitch = Some(effect.pitch.unwrap_or_default() + arp as f64);
             }
         }
         if let Some(pitch) = self.pitch_slide.as_mut() {

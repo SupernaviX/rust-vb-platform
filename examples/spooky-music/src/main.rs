@@ -36,9 +36,9 @@ fn main() {
         let a_pressed = pressed.a();
         if a_pressed && !was_a_pressed {
             if snd::CHANNELS[4].playing() {
-                snd::CHANNELS[3].play(&assets::JUMP_4);
+                snd::CHANNELS[3].play(&assets::HURT_4);
             } else {
-                snd::CHANNELS[4].play(&assets::JUMP_4);
+                snd::CHANNELS[4].play(&assets::HURT_4);
             }
         }
         was_a_pressed = a_pressed;
