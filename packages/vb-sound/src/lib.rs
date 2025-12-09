@@ -109,9 +109,9 @@ impl ChannelState {
                 self.playing = cmd.map_addr(|a| a & 0x07fffffc);
                 self.waiting = 0;
                 self.paused = false;
+                // SILENCE!!!
+                channel.interval().write(vsu::IntervalData::new());
                 if self.playing.is_null() {
-                    // SILENCE!!!
-                    channel.interval().write(vsu::IntervalData::new());
                     control.store(core::ptr::null_mut(), Relaxed);
                 } else {
                     let playing_something = 0x08000000 as *mut u32;
