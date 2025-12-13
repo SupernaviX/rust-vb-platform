@@ -1,5 +1,6 @@
 #![no_std]
 #![feature(macro_metavar_expr_concat)]
+#![cfg(target_arch = "v810")]
 
 mod builtins;
 pub mod macros;

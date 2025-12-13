@@ -1,4 +1,5 @@
 #![no_std]
+#![cfg(target_arch = "v810")]
 
 mod assets;
 pub mod text;
@@ -67,7 +68,7 @@ impl FrameMonitor {
     pub fn enable_interrupts(&self) {
         vip::INTENB.write(vip::InterruptFlags::new().with_xpend(true));
         // clear tne NP flag in PSW so interrupts can fire
-        unsafe { core::arch::asm!("ldsr r0, psw") };
+        unsafe { core::arch::asm!("ldsr r0, psw", options(nomem)) };
     }
 
     pub fn acknowledge_interrupts(&self) {

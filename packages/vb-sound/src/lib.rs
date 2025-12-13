@@ -1,5 +1,6 @@
 #![no_std]
 #![allow(clippy::manual_dangling_ptr)]
+#![cfg(target_arch = "v810")]
 
 mod assets;
 
