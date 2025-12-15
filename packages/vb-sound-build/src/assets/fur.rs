@@ -13,7 +13,7 @@ use std::{
 
 use crate::{
     assets::{
-        Channel,
+        ChannelData, WaveformSetData,
         fur::parser::{FurEffect, FurHeader, FurInfoBlock, FurInstrument, FurMacro, FurMacroBody},
         sound::{ChannelBuilder, ChannelPlayer, Moment},
     },
@@ -49,7 +49,7 @@ impl FurDecoder {
         Some(result)
     }
 
-    pub fn decode(self, waveform_indices: &HashMap<[u8; 32], u8>) -> Result<Vec<Channel>> {
+    pub fn decode(self, waveforms: &mut WaveformSetData) -> Result<Vec<ChannelData>> {
         let info = &self.info;
         assert!(info.subsong_pointers.is_empty());
         assert!(info.samples.is_empty());
@@ -105,10 +105,8 @@ impl FurDecoder {
                             0
                         };
                         let wavedata = self.wavetable(wavedata_index).expect("Invalid wavetable");
-                        let index = waveform_indices
-                            .get(&wavedata)
-                            .expect("Unregistered wavedata");
-                        player.set_waveform(*index);
+                        let index = waveforms.add_waveform(wavedata)?;
+                        player.set_waveform(index);
                         macro_cursor.load_instrument(instr, clock.now_tick());
                     }
                     macro_cursor.load_effects(info, &row.effects, clock.now_tick());

@@ -14,6 +14,7 @@ pub type Modulation = [i8; 32];
 mmio! {
     /** A set of waveforms for PCM channels. */
     pub const WAVEFORMS: [Waveform; 5] = 0x01000000, align 4;
+    pub const WAVEFORM_BYTES: [u8; 32 * 5] = 0x01000000, align 4;
     /** Modulation data used by channel 5. */
     pub const MODULATION: Modulation = 0x01000280, align 4;
 }

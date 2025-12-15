@@ -20,7 +20,7 @@ fn main() {
     gfx::init_display();
     gfx::set_colors(32, 64, 32);
     gfx::set_bkcol(0);
-    snd::load_waveforms(&assets::WAVEFORMS);
+    snd::WAVEFORMS.load(&assets::CHIRAX_WAVEFORMS);
     snd::CHANNELS[0].play(&assets::CHIRAX_0);
     snd::CHANNELS[1].play(&assets::CHIRAX_1);
     snd::CHANNELS[2].play(&assets::CHIRAX_2);

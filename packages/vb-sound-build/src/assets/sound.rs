@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{assets::Channel, config::ChannelEffects};
+use crate::{assets::ChannelData, config::ChannelEffects};
 
 #[derive(Debug, Default)]
 struct SoundRow {
@@ -224,12 +224,12 @@ pub struct ChannelBuilder {
     pub player: ChannelPlayer,
 }
 impl ChannelBuilder {
-    pub fn build(self) -> Channel {
+    pub fn build(self) -> ChannelData {
         let mut encoder = EventEncoder::new();
         for event in self.player.finish() {
             encoder.encode(event);
         }
-        Channel {
+        ChannelData {
             name: self.name,
             data: encoder.finish(),
         }

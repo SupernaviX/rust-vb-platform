@@ -12,7 +12,7 @@ use midi_reader_writer::midly_0_5::{
 };
 
 use crate::{
-    assets::{Channel, sound::ChannelBuilder},
+    assets::{ChannelData, sound::ChannelBuilder},
     config::ChannelEffects,
 };
 
@@ -62,7 +62,7 @@ impl MidiDecoder {
             });
     }
 
-    pub fn decode(mut self) -> Result<Vec<Channel>> {
+    pub fn decode(mut self) -> Result<Vec<ChannelData>> {
         let bytes = fs::read(&self.file)
             .map_err(|e| anyhow!("could not read midi from {}: {}", self.file.display(), e))?;
         let data = Smf::parse(&bytes)?;

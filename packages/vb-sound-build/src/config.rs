@@ -95,6 +95,8 @@ pub struct RawMidi {
     pub looping: bool,
     #[serde(rename = "channel", default)]
     pub channels: BTreeMap<String, RawChannel>,
+    #[serde(default)]
+    pub fixed_waveforms: Vec<String>,
 }
 impl RawMidi {
     fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
@@ -110,6 +112,8 @@ pub struct RawFur {
     pub file: PathBuf,
     #[serde(rename = "loop", default = "default_loop")]
     pub looping: bool,
+    #[serde(default)]
+    pub fixed_waveforms: Vec<String>,
 }
 impl RawFur {
     fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {

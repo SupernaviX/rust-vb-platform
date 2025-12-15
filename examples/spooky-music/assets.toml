@@ -1,22 +1,9 @@
-#[waveform.lead]
-#fur = { name = "test", wavetable = 0 }
-#[waveform.bass]
-#fur = { name = "test", wavetable = 1 }
-[waveform.a]
-fur = { name = "chirax", wavetable = 0 }
-[waveform.b]
-fur = { name = "chirax", wavetable = 1 }
-[waveform.c]
-fur = { name = "chirax", wavetable = 2 }
-
-#[fur.test]
-#file = "assets/test.fur"
-
 [waveform.square]
 fur = { name = "hurt", wavetable = 0 }
 
 [fur.chirax]
 file = "assets/chirax.fur"
+fixed_waveforms = ["square"]
 
 [fur.hurt]
 file = "assets/chirax_attack.fur"

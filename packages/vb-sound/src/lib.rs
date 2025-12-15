@@ -13,14 +13,16 @@ use core::{
 
 use vb_rt::sys::vsu;
 
-pub fn load_waveforms(waveforms: &[[u8; 32]]) {
-    for (index, waveform) in waveforms.iter().enumerate() {
-        vsu::WAVEFORMS.index(index).write_slice(waveform, 0);
-    }
-}
-
+pub static WAVEFORMS: WaveformControl = WaveformControl(AtomicPtr::new(core::ptr::null_mut()));
 pub static CHANNELS: [SoundChannel; 6] =
     [const { SoundChannel(AtomicPtr::new(core::ptr::null_mut())) }; 6];
+
+pub struct WaveformControl(AtomicPtr<u8>);
+impl WaveformControl {
+    pub fn load(&self, waveforms: &[u8]) {
+        self.0.store(waveforms.as_ptr().cast_mut(), Relaxed);
+    }
+}
 
 pub struct SoundChannel(AtomicPtr<u32>);
 impl SoundChannel {
@@ -68,10 +70,25 @@ impl SoundPlayer {
     }
 
     pub fn tick(&self) {
+        self.load_waveforms();
         let mut state = self.0.borrow_mut();
         for channel in state.iter_mut() {
             channel.tick();
         }
+    }
+
+    fn load_waveforms(&self) {
+        let waveform_set = WAVEFORMS.0.load(Relaxed).cast_const();
+        if waveform_set.is_null() {
+            return;
+        }
+        let waveform_bytes = unsafe { (waveform_set as *const u32).read() } as usize;
+        let waveform_ptr = unsafe { waveform_set.byte_add(4) };
+        let slice = unsafe { core::slice::from_raw_parts(waveform_ptr, waveform_bytes) };
+        // Stop all sound, VB requires this to load a new set of waveforms
+        vsu::SSTOP.write(0x01);
+        vsu::WAVEFORM_BYTES.write_slice(slice, 0);
+        WAVEFORMS.0.store(core::ptr::null_mut(), Relaxed);
     }
 }
 
