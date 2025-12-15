@@ -35,10 +35,10 @@ fn main() {
         let pressed = vb_rt::sys::hardware::read_controller();
         let a_pressed = pressed.a();
         if a_pressed && !was_a_pressed {
-            if snd::CHANNELS[4].playing() {
-                snd::CHANNELS[3].play(&assets::HURT_4);
+            if snd::CHANNELS[4].playing_overlay() {
+                snd::CHANNELS[2].play_overlay(&assets::HURT_4);
             } else {
-                snd::CHANNELS[4].play(&assets::HURT_4);
+                snd::CHANNELS[4].play_overlay(&assets::HURT_4);
             }
         }
         was_a_pressed = a_pressed;

@@ -11,11 +11,10 @@ use core::{
     sync::atomic::{AtomicBool, AtomicPtr, Ordering::Relaxed},
 };
 
-use vb_rt::sys::vsu;
+use vb_rt::sys::{VolatilePointer, vsu};
 
 pub static WAVEFORMS: WaveformControl = WaveformControl(AtomicPtr::new(core::ptr::null_mut()));
-pub static CHANNELS: [SoundChannel; 6] =
-    [const { SoundChannel(AtomicPtr::new(core::ptr::null_mut())) }; 6];
+pub static CHANNELS: [SoundChannel; 6] = [const { SoundChannel::new() }; 6];
 
 pub struct WaveformControl(AtomicPtr<u8>);
 impl WaveformControl {
@@ -24,35 +23,56 @@ impl WaveformControl {
     }
 }
 
-pub struct SoundChannel(AtomicPtr<u32>);
+pub struct SoundChannel {
+    base: AtomicPtr<u32>,
+    overlay: AtomicPtr<u32>,
+}
 impl SoundChannel {
+    const fn new() -> Self {
+        Self {
+            base: AtomicPtr::new(core::ptr::null_mut()),
+            overlay: AtomicPtr::new(core::ptr::null_mut()),
+        }
+    }
+
     pub fn play(&self, data: &[u32]) {
         // setting the pointer to the address of the audio to play,
         // plus 1 to signal that we're playing new audio.
         let data = data.as_ptr().map_addr(|a| a | 0x00000001);
-        self.0.store(data.cast_mut(), Relaxed);
+        self.base.store(data.cast_mut(), Relaxed);
+    }
+
+    pub fn play_overlay(&self, data: &[u32]) {
+        // setting the pointer to the address of the audio to play,
+        // plus 1 to signal that we're playing new audio,
+        let data = data.as_ptr().map_addr(|a| a | 0x00000001);
+        self.overlay.store(data.cast_mut(), Relaxed);
     }
 
     pub fn playing(&self) -> bool {
-        !self.0.load(Relaxed).is_null()
+        !self.base.load(Relaxed).is_null()
+    }
+
+    pub fn playing_overlay(&self) -> bool {
+        !self.overlay.load(Relaxed).is_null()
     }
 
     pub fn stop(&self) {
         // setting the pointer to 1 to signal that we are just starting to play nothing
         let data = 0x00000001 as *mut u32;
-        self.0.store(data, Relaxed);
+        self.base.store(data, Relaxed);
     }
 
     pub fn pause(&self) {
         // setting the pointer to 2 to signal that we're pausing
         let data = 0x00000002 as *mut u32;
-        self.0.store(data, Relaxed);
+        self.base.store(data, Relaxed);
     }
 
     pub fn resume(&self) {
         // setting the pointer to 3 to signal that we're resumin
         let data = 0x00000003 as *mut u32;
-        self.0.store(data, Relaxed);
+        self.base.store(data, Relaxed);
     }
 }
 
@@ -100,92 +120,145 @@ impl Default for SoundPlayer {
 
 struct ChannelState {
     channel: usize,
-    playing: *const u32,
-    waiting: u32,
-    paused: bool,
-    old_env_lo: u8,
+    subs: [SubChannelState; 2],
 }
 impl ChannelState {
     const fn new(channel: usize) -> Self {
         Self {
             channel,
-            playing: core::ptr::null(),
-            waiting: 0,
-            paused: false,
-            old_env_lo: 0,
+            subs: [const { SubChannelState::new() }; 2],
         }
     }
 
-    pub fn tick(&mut self) {
-        let control = &CHANNELS[self.channel].0;
+    fn tick(&mut self) {
+        let controls = &CHANNELS[self.channel];
         let channel = vsu::CHANNELS.index(self.channel);
 
-        let cmd = control.load(Relaxed).cast_const();
-        match cmd.addr() & 0x3 {
+        self.subs[1].handle_command(controls.overlay.load(Relaxed).cast_const(), channel, false);
+        let overlayed = self.subs[1].is_playing();
+        self.subs[0].handle_command(controls.base.load(Relaxed).cast_const(), channel, overlayed);
+
+        let base_playing = self.subs[0].tick(channel, overlayed);
+        let base_status = if base_playing {
+            0x08000000 as *mut u32
+        } else {
+            core::ptr::null_mut()
+        };
+        controls.base.store(base_status, Relaxed);
+
+        let overlay_playing = self.subs[1].tick(channel, false);
+        let overlay_status = if overlay_playing {
+            0x08000000 as *mut u32
+        } else {
+            core::ptr::null_mut()
+        };
+        controls.overlay.store(overlay_status, Relaxed);
+
+        if overlayed && !overlay_playing && base_playing {
+            // the overlayed sound effect is over, go back to playing the base
+            self.subs[0].resume(channel);
+        }
+    }
+}
+
+#[derive(Debug)]
+struct SubChannelState {
+    playing: *const u32,
+    waiting: u32,
+    paused: bool,
+    shadowed: [u8; 8],
+}
+
+impl SubChannelState {
+    const fn new() -> Self {
+        Self {
+            playing: core::ptr::null(),
+            waiting: 0,
+            paused: false,
+            shadowed: [0; 8],
+        }
+    }
+
+    fn handle_command(
+        &mut self,
+        cmd: *const u32,
+        channel: VolatilePointer<vsu::Channel>,
+        silent: bool,
+    ) {
+        match cmd.addr() & 0x03 {
             1 => {
-                // play/stop
+                // start playing
                 self.playing = cmd.map_addr(|a| a & 0x07fffffc);
                 self.waiting = 0;
                 self.paused = false;
-                // SILENCE!!!
-                channel.interval().write(vsu::IntervalData::new());
-                if self.playing.is_null() {
-                    control.store(core::ptr::null_mut(), Relaxed);
-                } else {
-                    let playing_something = 0x08000000 as *mut u32;
-                    control.store(playing_something, Relaxed);
+                if !silent {
+                    // SILENCE!!!
+                    channel.interval().write(vsu::IntervalData::new());
                 }
             }
             2 => {
                 // pause
                 self.paused = true;
-                channel.env_lo().write(vsu::EnvelopeLowData::new());
-                control.store(core::ptr::null_mut(), Relaxed);
+                if !silent {
+                    channel.env_lo().write(vsu::EnvelopeLowData::new());
+                }
             }
             3 => {
                 // resume
                 self.paused = false;
-                if !self.playing.is_null() {
-                    channel.env_lo().cast::<u8>().write(self.old_env_lo);
-                    let playing_something = 0x08000000 as *mut u32;
-                    control.store(playing_something, Relaxed);
+                if !silent {
+                    channel.env_lo().cast::<u8>().write(self.shadowed[4]);
                 }
             }
-            _ => { /* do nothing */ }
+            _ => {} // do nothing
         }
+    }
 
+    fn is_playing(&self) -> bool {
+        !self.playing.is_null() && !self.paused
+    }
+
+    fn resume(&self, channel: VolatilePointer<vsu::Channel>) {
+        for (offset, value) in self.shadowed.into_iter().enumerate() {
+            let field = unsafe { channel.field::<u8>(offset << 2) };
+            field.write(value);
+        }
+    }
+
+    fn tick(&mut self, channel: VolatilePointer<vsu::Channel>, silent: bool) -> bool {
         if self.paused || self.playing.is_null() {
             // Not playing audio right now.
-            return;
+            return false;
         } else if self.waiting > 0 {
             // We're waiting at least one frame before playing more.
             self.waiting -= 1;
-            return;
+            return true;
         }
         loop {
             let event = ChannelEvent::decode(unsafe { self.playing.read() });
             match event {
                 ChannelEvent::Done => {
-                    channel
-                        .interval()
-                        .write(vsu::IntervalData::new().with_enabled(false));
+                    if !silent {
+                        channel
+                            .interval()
+                            .write(vsu::IntervalData::new().with_enabled(false));
+                    }
                     self.playing = core::ptr::null_mut();
-                    control.store(core::ptr::null_mut(), Relaxed);
-                    return;
+                    return false;
                 }
                 ChannelEvent::Wait { frames } => {
                     self.playing = unsafe { self.playing.offset(1) };
                     self.waiting = frames;
-                    return;
+                    return true;
                 }
                 ChannelEvent::Write { offset, value } => {
                     self.playing = unsafe { self.playing.offset(1) };
-                    let field = unsafe { channel.field::<u8>(offset as usize) };
-                    field.write(value);
-                    if offset == 0x10 {
-                        // track old envelope in case we pause
-                        self.old_env_lo = value;
+                    if !silent {
+                        let field = unsafe { channel.field::<u8>(offset as usize) };
+                        field.write(value);
                     }
+                    // track old values in case we pause or get overridden
+                    self.shadowed[offset as usize >> 2] = value;
                 }
                 ChannelEvent::Jump { offset } => {
                     self.playing = unsafe { self.playing.offset(offset) };
