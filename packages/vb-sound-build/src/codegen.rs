@@ -16,7 +16,7 @@ pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
         writeln!(file, "#[allow(dead_code)]")?;
         writeln!(
             file,
-            "pub static {}_WAVEFORMS: [u8; {}] = vb_sound::include_waveforms!(\"{}\");",
+            "pub static {}_WAVEFORMS: vb_sound::WaveformData<{}> = vb_sound::include_waveforms!(\"{}\");",
             rust_identifier(&waveforms.name),
             waveforms_bytes.len(),
             waveforms_filename

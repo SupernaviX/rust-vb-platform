@@ -11,6 +11,7 @@ use core::{
     sync::atomic::{AtomicBool, AtomicPtr, Ordering::Relaxed},
 };
 
+pub use assets::WaveformData;
 use vb_rt::sys::{VolatilePointer, vsu};
 
 pub static WAVEFORMS: WaveformControl = WaveformControl(AtomicPtr::new(core::ptr::null_mut()));
