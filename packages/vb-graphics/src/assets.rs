@@ -7,8 +7,17 @@ pub struct Image {
 }
 
 impl Image {
+    pub fn render(&self) -> ImageRenderer<'_> {
+        ImageRenderer {
+            image: self,
+            src: (0, 0),
+            cells: (self.width_cells, self.height_cells),
+            offset: 0,
+        }
+    }
+
     pub fn render_to_bgmap(&self, index: u8, dst: (u8, u8)) -> (i16, i16) {
-        self.render_region_to_bgmap(index, dst, (0, 0), (self.width_cells, self.height_cells))
+        self.render().into_bgmap(index, dst)
     }
 
     pub fn render_region_to_bgmap(
@@ -18,17 +27,7 @@ impl Image {
         src: (u8, u8),
         cells: (u8, u8),
     ) -> (i16, i16) {
-        let mut src_start = src.1 as usize * self.width_cells as usize + src.0 as usize;
-        let mut dst_start = index as usize * 4096 + dst.1 as usize * 64 + dst.0 as usize;
-        let width = cells.0 as usize;
-        if width > 0 {
-            for _ in 0..cells.1 {
-                vip::BG_CELLS.write_slice(&self.data[src_start..(src_start + width)], dst_start);
-                src_start += self.width_cells as usize;
-                dst_start += 64;
-            }
-        }
-        (dst.0 as i16 * 8, dst.1 as i16 * 8)
+        self.render().region(src, cells).into_bgmap(index, dst)
     }
 
     pub fn render_to_objects(
@@ -69,6 +68,44 @@ impl Image {
             }
         }
         used
+    }
+}
+
+pub struct ImageRenderer<'a> {
+    image: &'a Image,
+    src: (u8, u8),
+    cells: (u8, u8),
+    offset: u16,
+}
+impl ImageRenderer<'_> {
+    pub fn region(self, src: (u8, u8), cells: (u8, u8)) -> Self {
+        Self { src, cells, ..self }
+    }
+    pub fn char_offset(self, offset: u16) -> Self {
+        Self { offset, ..self }
+    }
+    pub fn into_bgmap(self, index: u8, dst: (u8, u8)) -> (i16, i16) {
+        let mut src_start =
+            self.src.1 as usize * self.image.width_cells as usize + self.src.0 as usize;
+        let mut dst_start = index as usize * 4096 + dst.1 as usize * 64 + dst.0 as usize;
+        let width = self.cells.0 as usize;
+        if width > 0 {
+            for _ in 0..self.cells.1 {
+                let src_cells = &self.image.data[src_start..(src_start + width)];
+                if self.offset == 0 {
+                    vip::BG_CELLS.write_slice(src_cells, dst_start);
+                } else {
+                    for (index, cell) in src_cells.iter().enumerate() {
+                        vip::BG_CELLS
+                            .index(dst_start + index)
+                            .write(cell.with_character(cell.character() + self.offset));
+                    }
+                }
+                src_start += self.image.width_cells as usize;
+                dst_start += 64;
+            }
+        }
+        (dst.0 as i16 * 8, dst.1 as i16 * 8)
     }
 }
 
