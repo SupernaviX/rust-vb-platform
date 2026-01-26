@@ -30,44 +30,8 @@ impl Image {
         self.render().region(src, cells).into_bgmap(index, dst)
     }
 
-    pub fn render_to_objects(
-        &self,
-        mut used: u16,
-        dst: (i16, i16),
-        stereo: vip::ObjectStereo,
-    ) -> u16 {
-        let min_x = -8 - stereo.jp().abs();
-        let max_x = 384 + stereo.jp().abs();
-        for y in 0..self.height_cells {
-            let dy = dst.1 + (y as i16) * 8;
-            if dy <= -8 {
-                continue;
-            }
-            if dy >= 224 {
-                break;
-            }
-            for x in 0..self.width_cells {
-                let dx = dst.0 + (x as i16) * 8;
-                if dx <= min_x {
-                    continue;
-                }
-                if dx > max_x {
-                    break;
-                }
-                let cell = self.data[y as usize * self.width_cells as usize + x as usize];
-                if cell.character() == 0 {
-                    continue;
-                }
-                let index = used - 1;
-                let obj = vip::OBJS.index(index as usize);
-                obj.jx().write(dx);
-                obj.stereo().write(stereo);
-                obj.jy().write(dy);
-                obj.cell().write(cell);
-                used = index;
-            }
-        }
-        used
+    pub fn render_to_objects(&self, used: u16, dst: (i16, i16), stereo: vip::ObjectStereo) -> u16 {
+        self.render().into_objects(used, dst, stereo)
     }
 }
 
@@ -106,6 +70,44 @@ impl ImageRenderer<'_> {
             }
         }
         (dst.0 as i16 * 8, dst.1 as i16 * 8)
+    }
+
+    pub fn into_objects(self, mut used: u16, dst: (i16, i16), stereo: vip::ObjectStereo) -> u16 {
+        let min_x = -8 - stereo.jp().abs();
+        let max_x = 384 + stereo.jp().abs();
+        for y in 0..self.image.height_cells {
+            let dy = dst.1 + (y as i16) * 8;
+            if dy <= -8 {
+                continue;
+            }
+            if dy >= 224 {
+                break;
+            }
+            for x in 0..self.image.width_cells {
+                let dx = dst.0 + (x as i16) * 8;
+                if dx <= min_x {
+                    continue;
+                }
+                if dx > max_x {
+                    break;
+                }
+                let cell =
+                    self.image.data[y as usize * self.image.width_cells as usize + x as usize];
+                let character = cell.character();
+                if character == 0 {
+                    continue;
+                }
+                let index = used - 1;
+                let obj = vip::OBJS.index(index as usize);
+                obj.jx().write(dx);
+                obj.stereo().write(stereo);
+                obj.jy().write(dy);
+                obj.cell()
+                    .write(cell.with_character(character + self.offset));
+                used = index;
+            }
+        }
+        used
     }
 }
 
