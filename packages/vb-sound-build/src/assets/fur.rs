@@ -114,7 +114,11 @@ impl FurDecoder {
                         effect.apply(&mut player);
                     }
                     if let Some(note) = row.note {
-                        if note > 179 {
+                        if note == 180
+                            && let Some(key) = player.current_note()
+                        {
+                            player.start_note(key);
+                        } else if note > 180 {
                             player.stop_note();
                         } else {
                             player.start_note(note - 48);

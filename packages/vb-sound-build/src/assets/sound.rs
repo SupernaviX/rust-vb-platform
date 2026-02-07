@@ -125,6 +125,14 @@ impl ChannelPlayer {
         }
     }
 
+    pub fn current_note(&self) -> Option<u8> {
+        if self.note_started.is_some() {
+            self.last_key
+        } else {
+            None
+        }
+    }
+
     pub fn start_note(&mut self, mut key: u8) {
         if self.note_started.is_some() {
             self.stop_note();
