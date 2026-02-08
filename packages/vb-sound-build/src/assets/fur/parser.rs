@@ -224,6 +224,8 @@ pub enum FurEffect {
     Arpeggio(u8, u8),
     PitchSlideUp(u8),
     PitchSlideDown(u8),
+    JumpToOrder(u8),
+    JumpToNextPattern(u8),
     ArpeggioSpeed(u8),
     NoteCut(u8),
     NoteRelease(u8),
@@ -246,6 +248,8 @@ fn effect_parser(bits: u8) -> binrw::BinResult<Option<FurEffect>> {
         0x00 => FurEffect::Arpeggio(value >> 4, value & 0xf),
         0x01 => FurEffect::PitchSlideUp(value),
         0x02 => FurEffect::PitchSlideDown(value),
+        0x0b => FurEffect::JumpToOrder(value),
+        0x0d => FurEffect::JumpToNextPattern(value),
         0xe0 => FurEffect::ArpeggioSpeed(value),
         0xec => FurEffect::NoteCut(value),
         0xfc => FurEffect::NoteRelease(value),
@@ -334,18 +338,11 @@ fn pattern_parser(pattern_length: u16) -> binrw::BinResult<Vec<FurPatternRow>> {
     Ok(result)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FurPatternRow {
     pub index: u64,
     pub note: Option<u8>,
     pub instrument: Option<u8>,
     pub volume: Option<u8>,
     pub effects: Vec<FurEffect>,
-}
-impl FurPatternRow {
-    pub fn should_stop_song(&self) -> bool {
-        self.effects
-            .iter()
-            .any(|e| matches!(e, FurEffect::StopSong))
-    }
 }

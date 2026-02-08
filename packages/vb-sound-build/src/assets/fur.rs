@@ -4,7 +4,7 @@ use anyhow::Result;
 use binrw::BinRead;
 use flate2::bufread::ZlibDecoder;
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     fs,
     io::{Cursor, Read},
     path::Path,
@@ -14,7 +14,10 @@ use std::{
 use crate::{
     assets::{
         ChannelData, WaveformSetData,
-        fur::parser::{FurEffect, FurHeader, FurInfoBlock, FurInstrument, FurMacro, FurMacroBody},
+        fur::parser::{
+            FurEffect, FurHeader, FurInfoBlock, FurInstrument, FurMacro, FurMacroBody,
+            FurPatternRow,
+        },
         sound::{ChannelBuilder, ChannelPlayer, Moment},
     },
     config::ChannelEffects,
@@ -53,113 +56,236 @@ impl FurDecoder {
         let info = &self.info;
         assert!(info.subsong_pointers.is_empty());
         assert!(info.samples.is_empty());
-        let mut channels = vec![];
+        let mut channels: Vec<FurChannel> = (0..6).map(|i| FurChannel::new(info, i)).collect();
+        let mut orders_seen = HashSet::new();
+        let mut order = 0;
+        let mut start_row = 0;
+        loop {
+            if !orders_seen.insert(order) {
+                for channel in &mut channels {
+                    channel.jump_to(order);
+                }
+                break;
+            }
+            let mut end = None;
+            for channel in &channels {
+                let pattern_length = channel.pattern_length(order);
+                end = match (pattern_length, end) {
+                    (Some(old), Some(new)) => Some(old.min(new)),
+                    (a, b) => a.or(b),
+                };
+            }
+            let end_row = end.unwrap_or(info.pattern_length as u64);
+            let mut next = NextPosition::NextPattern;
+            for channel in &mut channels {
+                let pos = channel.play_pattern(order, start_row, end_row, info, waveforms)?;
+                next = next.max(pos);
+            }
+            if let NextPosition::NextPattern = &next
+                && order == info.orders_length as usize - 1
+            {
+                next = if self.looping {
+                    NextPosition::NextPattern
+                } else {
+                    NextPosition::Stop
+                }
+            }
+            (order, start_row) = match next {
+                NextPosition::NextPattern => (order + 1, 0),
+                NextPosition::Pattern { order, row } => (order, row),
+                NextPosition::Stop => break,
+            }
+        }
+        Ok(channels
+            .into_iter()
+            .flat_map(|c| c.build(&self.name))
+            .collect())
+    }
+}
+
+struct FurChannel {
+    channel: usize,
+    player: ChannelPlayer,
+    clock: Clock,
+    orders: Vec<u16>,
+    played_orders: HashSet<usize>,
+    patterns: HashMap<u16, Vec<FurPatternRow>>,
+    effects: EffectCursor,
+    empty: bool,
+}
+
+impl FurChannel {
+    fn new(info: &FurInfoBlock, channel: usize) -> Self {
+        let mut player = ChannelPlayer::new(ChannelEffects::default(), false);
         let mut patterns = HashMap::new();
         for pattern in &info.patterns {
             let value = &pattern.value;
-            patterns.insert((value.channel, value.index), value.data.as_slice());
-        }
-        let mut end_tick =
-            info.orders_length as u64 * info.pattern_length as u64 * info.speed_1 as u64;
-        for channel in 0..6 {
-            let mut empty = true;
-            let mut player = ChannelPlayer::new(ChannelEffects::default(), false);
-            player.set_volume(15);
-            player.set_envelope(15);
-            let mut clock = Clock::new(info);
-            let mut macro_cursor = EffectCursor::new();
-            player.advance_time(clock.now());
-            if self.looping {
-                player.start_pattern(0);
+            if value.channel == channel as u8 {
+                patterns.insert(value.index, value.data.to_vec());
             }
-            'play_loop: for (order_index, pattern_index) in info.orders[channel].iter().enumerate()
-            {
-                let Some(mut pattern) = patterns
-                    .get(&(channel as u8, *pattern_index as u16))
-                    .copied()
-                else {
-                    continue;
-                };
-                let pattern_start_tick =
-                    order_index as u64 * info.pattern_length as u64 * info.speed_1 as u64;
-                clock.advance(pattern_start_tick);
-                while let Some((row, rest)) = pattern.split_first() {
-                    pattern = rest;
-                    let target_tick = pattern_start_tick + (row.index * info.speed_1 as u64);
-                    for effect in macro_cursor.effects(target_tick) {
-                        clock.advance(effect.tick);
-                        player.advance_time(clock.now());
-                        effect.apply(&mut player);
-                    }
-                    clock.advance(target_tick);
-                    player.advance_time(clock.now());
+        }
+        player.set_volume(15);
+        player.set_envelope(15);
+        Self {
+            channel,
+            player,
+            clock: Clock::new(info),
+            orders: info.orders[channel].iter().map(|x| *x as u16).collect(),
+            played_orders: HashSet::new(),
+            patterns,
+            effects: EffectCursor::new(),
+            empty: true,
+        }
+    }
 
-                    if let Some(volume) = row.volume {
-                        player.set_volume(volume);
+    fn pattern_length(&self, order: usize) -> Option<u64> {
+        let pattern_index = self.orders.get(order)?;
+        let pattern = self.patterns.get(pattern_index)?;
+        for p in pattern {
+            for effect in &p.effects {
+                match effect {
+                    FurEffect::JumpToOrder(_) | FurEffect::JumpToNextPattern(_) => {
+                        return Some(p.index + 1);
                     }
-                    if let Some(instrument) = row.instrument {
-                        let instr = &info.instruments[instrument as usize].value;
-                        let wavedata_index = if let Some(synth) = instr.wavetable_synth_data() {
-                            synth.first_wave as usize
-                        } else {
-                            0
-                        };
-                        let wavedata = self.wavetable(wavedata_index).expect("Invalid wavetable");
-                        let index = waveforms.add_waveform(wavedata)?;
-                        player.set_waveform(index);
-                        macro_cursor.load_instrument(instr, clock.now_tick());
-                    }
-                    macro_cursor.load_effects(info, &row.effects, clock.now_tick());
-                    for effect in macro_cursor.effects(clock.now_tick()) {
-                        effect.apply(&mut player);
-                    }
-                    if let Some(note) = row.note {
-                        if note == 180
-                            && let Some(key) = player.current_note()
-                        {
-                            player.start_note(key);
-                        } else if note > 180 {
-                            player.stop_note();
-                        } else {
-                            player.start_note(note - 48);
-                        }
-                        empty = false;
-                    }
+                    FurEffect::StopSong => return Some(p.index),
+                    _ => {}
+                }
+            }
+        }
+        None
+    }
 
-                    if row.should_stop_song() {
-                        let target_tick =
-                            pattern_start_tick + ((row.index + 1) * info.speed_1 as u64);
-                        for effect in macro_cursor.effects(target_tick) {
-                            clock.advance(effect.tick);
-                            player.advance_time(clock.now());
-                            effect.apply(&mut player);
+    fn jump_to(&mut self, order: usize) {
+        self.player.go_to_pattern(order as u8);
+    }
+
+    fn play_pattern(
+        &mut self,
+        order: usize,
+        start_row: u64,
+        end_row: u64,
+        info: &FurInfoBlock,
+        waveforms: &mut WaveformSetData,
+    ) -> Result<NextPosition> {
+        self.player.advance_time(self.clock.now());
+        self.player.start_pattern(order as u8);
+        self.played_orders.insert(order);
+        let ticks_per_row = info.speed_1 as u64;
+        let start_tick = self.clock.now_tick();
+        let end_tick = start_tick + ((end_row - start_row) * ticks_per_row);
+        let mut next = NextPosition::NextPattern;
+        if let Some(pattern_index) = self.orders.get(order)
+            && let Some(pattern) = self.patterns.get(pattern_index)
+        {
+            let rows: Vec<FurPatternRow> = pattern
+                .iter()
+                .skip_while(|r| r.index < start_row)
+                .take_while(|r| r.index < end_row)
+                .cloned()
+                .collect();
+            'pattern_loop: for row in rows {
+                let tick = start_tick + row.index * ticks_per_row;
+                self.advance_to(tick);
+
+                if let Some(volume) = row.volume {
+                    self.player.set_volume(volume);
+                }
+                if let Some(instrument) = row.instrument {
+                    let instr = &info.instruments[instrument as usize].value;
+                    let wavedata_index = if let Some(synth) = instr.wavetable_synth_data() {
+                        synth.first_wave as usize
+                    } else {
+                        0
+                    };
+                    let wavedata = find_wavetable(info, wavedata_index).expect("Invalid wavetable");
+                    let index = waveforms.add_waveform(wavedata)?;
+                    self.player.set_waveform(index);
+                    self.effects.load_instrument(instr, self.clock.now_tick());
+                }
+                self.effects
+                    .load_effects(info, &row.effects, self.clock.now_tick());
+                for effect in self.effects.effects(self.clock.now_tick()) {
+                    effect.apply(&mut self.player);
+                }
+                if let Some(note) = row.note {
+                    if note == 180 {
+                        if let Some(key) = self.player.current_note() {
+                            self.player.start_note(key);
                         }
-                        clock.advance(target_tick);
-                        end_tick = clock.now_tick();
-                        break 'play_loop;
+                    } else if note > 180 {
+                        self.player.stop_note();
+                    } else {
+                        self.player.start_note(note - 48);
+                    }
+                    self.empty = false;
+                }
+
+                for effect in &row.effects {
+                    match effect {
+                        FurEffect::JumpToNextPattern(row) => {
+                            next = NextPosition::Pattern {
+                                order: order + 1,
+                                row: *row as u64,
+                            };
+                            break 'pattern_loop;
+                        }
+                        FurEffect::JumpToOrder(order) => {
+                            next = NextPosition::Pattern {
+                                order: *order as usize,
+                                row: 0,
+                            };
+                            break 'pattern_loop;
+                        }
+                        FurEffect::StopSong => {
+                            next = NextPosition::Stop;
+                            break 'pattern_loop;
+                        }
+                        _ => {}
                     }
                 }
             }
-            for effect in macro_cursor.effects(end_tick) {
-                clock.advance(effect.tick);
-                player.advance_time(clock.now());
-                effect.apply(&mut player);
-            }
-            clock.advance(end_tick);
-            player.advance_time(clock.now());
-            if self.looping {
-                player.go_to_pattern(0);
-            }
-            if !empty {
-                let builder = ChannelBuilder {
-                    name: format!("{}_{channel}", self.name),
-                    player,
-                };
-                channels.push(builder.build());
-            }
         }
-        Ok(channels)
+        self.advance_to(end_tick);
+        Ok(next)
     }
+
+    fn advance_to(&mut self, tick: u64) {
+        for effect in self.effects.effects(tick) {
+            self.clock.advance(effect.tick);
+            self.player.advance_time(self.clock.now());
+            effect.apply(&mut self.player);
+        }
+        self.clock.advance(tick);
+        self.player.advance_time(self.clock.now());
+    }
+
+    fn build(self, name: &str) -> Option<ChannelData> {
+        if self.empty {
+            return None;
+        }
+        let builder = ChannelBuilder {
+            name: format!("{name}_{}", self.channel),
+            player: self.player,
+        };
+        Some(builder.build())
+    }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+enum NextPosition {
+    NextPattern,
+    Pattern { order: usize, row: u64 },
+    Stop,
+}
+
+fn find_wavetable(info: &FurInfoBlock, index: usize) -> Option<[u8; 32]> {
+    let wavetable = &info.wavetables.get(index)?.value;
+    assert!(wavetable.data.len() == 32, "Invalid wavetable data");
+    let mut result = [0; 32];
+    for (index, sample) in wavetable.data.iter().enumerate() {
+        result[index] = *sample as u8;
+    }
+    Some(result)
 }
 
 struct Clock {
