@@ -126,7 +126,7 @@ impl FurChannel {
                 patterns.insert(value.index, value.data.to_vec());
             }
         }
-        player.set_volume(15);
+        player.set_volume((15, 15));
         player.set_envelope(15);
         Self {
             channel,
@@ -206,7 +206,7 @@ impl FurChannel {
                 self.advance_to(tick, clock, info, waveforms)?;
 
                 if let Some(volume) = row.volume {
-                    self.player.set_volume(volume);
+                    self.player.set_envelope(volume);
                 }
                 if let Some(instrument) = row.instrument {
                     let instr = &info.instruments[instrument as usize].value;
@@ -221,6 +221,7 @@ impl FurChannel {
                     self.effects.load_instrument(instr, self.tick);
                 }
                 self.effects.load_effects(info, &row.effects, self.tick);
+                self.player.set_volume(self.effects.panning);
                 for effect in self.effects.effects(self.tick) {
                     effect.apply(&mut self.player, info, waveforms)?;
                 }
@@ -516,6 +517,7 @@ struct EffectCursor {
     waveform: Option<MacroBodyCursor<u8>>,
     arpeggio_effect: Option<ArpeggioEffectCursor>,
     arpeggio_speed: u8,
+    panning: (u8, u8),
     volume_slide: Option<SlideCursor>,
     pitch_slide: Option<SlideCursor>,
     note_release: Option<u64>,
@@ -529,6 +531,7 @@ impl EffectCursor {
             waveform: None,
             arpeggio_effect: None,
             arpeggio_speed: 1,
+            panning: (15, 15),
             volume_slide: None,
             pitch_slide: None,
             note_release: None,
@@ -567,9 +570,22 @@ impl EffectCursor {
                 FurEffect::PitchSlideDown(speed) => {
                     self.load_pitch_slide(info, -(speed as i16), at_tick)
                 }
+                FurEffect::SetPanning(left, right) => {
+                    let left_vol = (left as f64 * 15.0 / 225.0) as u8;
+                    let right_vol = (right as f64 * 15.0 / 225.0) as u8;
+                    self.panning = (left_vol, right_vol)
+                }
                 FurEffect::VolumeSlide(down, up) => {
                     let speed = up as i16 - down as i16;
                     self.load_volume_slide(speed, at_tick);
+                }
+                FurEffect::SetVolumeLeft(value) => {
+                    let vol = (value as f64 * 15.0 / 225.0) as u8;
+                    self.panning.0 = vol;
+                }
+                FurEffect::SetVolumeRight(value) => {
+                    let vol = (value as f64 * 15.0 / 225.0) as u8;
+                    self.panning.1 = vol;
                 }
                 FurEffect::ArpeggioSpeed(speed) => {
                     self.arpeggio_speed = speed;
@@ -684,7 +700,7 @@ impl MacroEffect {
         waveforms: &mut WaveformSetData,
     ) -> Result<()> {
         if let Some(volume) = self.volume {
-            player.set_envelope(volume);
+            player.set_envelope_multiplier(volume as f64 / 15.0);
         }
         if let Some(pitch) = self.pitch {
             player.set_pitch_shift(pitch);

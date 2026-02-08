@@ -37,7 +37,7 @@ impl MidiDecoder {
     pub fn pcm_channel(&mut self, name: &str, index: u8, waveform: u8, effects: &ChannelEffects) {
         let mut player = ChannelPlayer::new(effects.clone(), true);
         player.set_waveform(waveform);
-        player.set_volume(normalize_volume(127));
+        player.set_volume((normalize_volume(127), normalize_volume(127)));
         player.set_envelope(normalize_volume(127));
         self.channels
             .entry(index)
@@ -51,7 +51,7 @@ impl MidiDecoder {
     pub fn noise_channel(&mut self, name: &str, index: u8, tap: u8, effects: &ChannelEffects) {
         let mut player = ChannelPlayer::new(effects.clone(), true);
         player.set_tap(tap);
-        player.set_volume(normalize_volume(127));
+        player.set_volume((normalize_volume(127), normalize_volume(127)));
         player.set_envelope(normalize_volume(127));
         self.channels
             .entry(index)
@@ -114,7 +114,10 @@ impl MidiDecoder {
                                 match controller {
                                     7 => {
                                         // volume (out of 127)
-                                        channel.player.set_volume(normalize_volume(value));
+                                        channel.player.set_volume((
+                                            normalize_volume(value),
+                                            normalize_volume(value),
+                                        ));
                                     }
                                     11 => {
                                         // "expression" (percentage of volume, out of 127)

@@ -11,7 +11,7 @@ struct SoundRow {
     note: Option<NoteEvent>,
     frequency: Option<u16>,
     waveform: Option<u8>,
-    volume: Option<u8>,
+    volume: Option<(u8, u8)>,
     envelope: Option<u8>,
     tap: Option<u8>,
     start_pattern: Option<u8>,
@@ -57,9 +57,10 @@ pub struct ChannelPlayer {
     note_started: Option<Moment>,
     last_key: Option<u8>,
     last_waveform: Option<u8>,
-    last_volume: Option<u8>,
+    last_volume: Option<(u8, u8)>,
     last_envelope: Option<u8>,
     last_tap: Option<u8>,
+    envelope_multiplier: f64,
     pitch_shift: f64,
 }
 
@@ -78,6 +79,7 @@ impl ChannelPlayer {
             last_volume: None,
             last_envelope: None,
             last_tap: None,
+            envelope_multiplier: 1.0,
             pitch_shift: 0.0,
         }
     }
@@ -102,8 +104,11 @@ impl ChannelPlayer {
         }
     }
 
-    pub fn set_volume(&mut self, volume: u8) {
-        let volume = (volume as f64 * self.effects.volume) as u8;
+    pub fn set_volume(&mut self, volume: (u8, u8)) {
+        let volume = (
+            (volume.0 as f64 * self.effects.volume) as u8,
+            (volume.1 as f64 * self.effects.volume) as u8,
+        );
         if self.last_volume != Some(volume) {
             self.current_row().volume = Some(volume);
             self.last_volume = Some(volume);
@@ -112,8 +117,17 @@ impl ChannelPlayer {
 
     pub fn set_envelope(&mut self, envelope: u8) {
         if self.last_envelope != Some(envelope) {
-            self.current_row().envelope = Some(envelope);
+            self.current_row().envelope = Some((envelope as f64 * self.envelope_multiplier) as u8);
             self.last_envelope = Some(envelope);
+        }
+    }
+
+    pub fn set_envelope_multiplier(&mut self, multiplier: f64) {
+        if self.envelope_multiplier != multiplier {
+            if let Some(envelope) = self.last_envelope {
+                self.current_row().envelope = Some((envelope as f64 * multiplier) as u8);
+            }
+            self.envelope_multiplier = multiplier;
         }
     }
 
@@ -254,11 +268,8 @@ fn emit_events(row: SoundRow, events: &mut Vec<VBEvent>) {
     if let Some(waveform) = row.waveform {
         events.push(VBEvent::SetWaveform { waveform });
     }
-    if let Some(volume) = row.volume {
-        events.push(VBEvent::SetVolume {
-            left: volume,
-            right: volume,
-        });
+    if let Some((left, right)) = row.volume {
+        events.push(VBEvent::SetVolume { left, right });
     }
     if let Some(envelope) = row.envelope {
         events.push(VBEvent::SetEnvelope {
