@@ -153,10 +153,9 @@ impl FurChannel {
         for p in pattern {
             for effect in &p.effects {
                 match effect {
-                    FurEffect::JumpToOrder(_) | FurEffect::JumpToNextPattern(_) => {
-                        return Some(p.index + 1);
-                    }
-                    FurEffect::StopSong => return Some(p.index),
+                    FurEffect::JumpToOrder(_)
+                    | FurEffect::JumpToNextPattern(_)
+                    | FurEffect::StopSong => return Some(p.index + 1),
                     FurEffect::SetVirtualTempoNumerator(value) => {
                         let tick = self.tick + (p.index * info.speed_1 as u64);
                         clock.set_virtual_numerator(tick, *value as u16);
