@@ -76,8 +76,8 @@ pub struct FurInfoBlock {
     pub linear_pitch: u8,
     #[br(pad_after = 14)]
     pub pitch_slide_speed: u8,
-    virtual_tempo_numerator: u16,
-    virtual_tempo_denominator: u16,
+    pub virtual_tempo_numerator: u16,
+    pub virtual_tempo_denominator: u16,
     first_subsong_name: NullString,
     first_subsong_comment: NullString,
     #[br(pad_after = 3)]
@@ -155,6 +155,8 @@ pub enum FurMacro {
     Volume(FurMacroBody<u8>),
     #[br(magic = 1u8)]
     Arpeggio(FurMacroBody<i8>),
+    #[br(magic = 2u8)]
+    Duty(FurMacroBody<u8>),
     #[br(magic = 3u8)]
     Waveform(FurMacroBody<u8>),
     #[br(magic = 255u8)]
@@ -232,6 +234,8 @@ pub enum FurEffect {
     ArpeggioSpeed(u8),
     NoteCut(u8),
     NoteRelease(u8),
+    SetVirtualTempoNumerator(u8),
+    SetVirtualTempoDenominator(u8),
     StopSong,
     Unknown(u8, u8),
 }
@@ -257,6 +261,8 @@ fn effect_parser(bits: u8) -> binrw::BinResult<Option<FurEffect>> {
         0xe0 => FurEffect::ArpeggioSpeed(value),
         0xec => FurEffect::NoteCut(value),
         0xfc => FurEffect::NoteRelease(value),
+        0xfd => FurEffect::SetVirtualTempoNumerator(value),
+        0xfe => FurEffect::SetVirtualTempoDenominator(value),
         0xff => FurEffect::StopSong,
         idk => FurEffect::Unknown(idk, value),
     }))

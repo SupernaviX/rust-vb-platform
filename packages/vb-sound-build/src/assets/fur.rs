@@ -56,6 +56,7 @@ impl FurDecoder {
         let info = &self.info;
         assert!(info.subsong_pointers.is_empty());
         assert!(info.samples.is_empty());
+        let mut clock = Clock::new(info);
         let mut channels: Vec<FurChannel> = (0..6).map(|i| FurChannel::new(info, i)).collect();
         let mut orders_seen = HashSet::new();
         let mut order = 0;
@@ -69,7 +70,7 @@ impl FurDecoder {
             }
             let mut end = None;
             for channel in &channels {
-                let pattern_length = channel.pattern_length(order);
+                let pattern_length = channel.preprocess_pattern(order, &mut clock, info);
                 end = match (pattern_length, end) {
                     (Some(old), Some(new)) => Some(old.min(new)),
                     (a, b) => a.or(b),
@@ -78,7 +79,8 @@ impl FurDecoder {
             let end_row = end.unwrap_or(info.pattern_length as u64);
             let mut next = NextPosition::NextPattern;
             for channel in &mut channels {
-                let pos = channel.play_pattern(order, start_row, end_row, info, waveforms)?;
+                let pos =
+                    channel.play_pattern(order, start_row, end_row, &clock, info, waveforms)?;
                 next = next.max(pos);
             }
             if let NextPosition::NextPattern = &next
@@ -106,7 +108,7 @@ impl FurDecoder {
 struct FurChannel {
     channel: usize,
     player: ChannelPlayer,
-    clock: Clock,
+    tick: u64,
     orders: Vec<u16>,
     played_orders: HashSet<usize>,
     patterns: HashMap<u16, Vec<FurPatternRow>>,
@@ -129,7 +131,7 @@ impl FurChannel {
         Self {
             channel,
             player,
-            clock: Clock::new(info),
+            tick: 0,
             orders: info.orders[channel].iter().map(|x| *x as u16).collect(),
             played_orders: HashSet::new(),
             patterns,
@@ -138,7 +140,14 @@ impl FurChannel {
         }
     }
 
-    fn pattern_length(&self, order: usize) -> Option<u64> {
+    // Calculate how many rows we will process in this pattern.
+    // Also, track any tempo changes.
+    fn preprocess_pattern(
+        &self,
+        order: usize,
+        clock: &mut Clock,
+        info: &FurInfoBlock,
+    ) -> Option<u64> {
         let pattern_index = self.orders.get(order)?;
         let pattern = self.patterns.get(pattern_index)?;
         for p in pattern {
@@ -148,6 +157,14 @@ impl FurChannel {
                         return Some(p.index + 1);
                     }
                     FurEffect::StopSong => return Some(p.index),
+                    FurEffect::SetVirtualTempoNumerator(value) => {
+                        let tick = self.tick + (p.index * info.speed_1 as u64);
+                        clock.set_virtual_numerator(tick, *value as u16);
+                    }
+                    FurEffect::SetVirtualTempoDenominator(value) => {
+                        let tick = self.tick + (p.index * info.speed_1 as u64);
+                        clock.set_virtual_denominator(tick, *value as u16);
+                    }
                     _ => {}
                 }
             }
@@ -164,14 +181,15 @@ impl FurChannel {
         order: usize,
         start_row: u64,
         end_row: u64,
+        clock: &Clock,
         info: &FurInfoBlock,
         waveforms: &mut WaveformSetData,
     ) -> Result<NextPosition> {
-        self.player.advance_time(self.clock.now());
+        self.player.advance_time(clock.moment(self.tick));
         self.player.start_pattern(order as u8);
         self.played_orders.insert(order);
         let ticks_per_row = info.speed_1 as u64;
-        let start_tick = self.clock.now_tick();
+        let start_tick = self.tick;
         let end_tick = start_tick + ((end_row - start_row) * ticks_per_row);
         let mut next = NextPosition::NextPattern;
         if let Some(pattern_index) = self.orders.get(order)
@@ -185,7 +203,7 @@ impl FurChannel {
                 .collect();
             'pattern_loop: for row in rows {
                 let tick = start_tick + row.index * ticks_per_row;
-                self.advance_to(tick, info, waveforms)?;
+                self.advance_to(tick, clock, info, waveforms)?;
 
                 if let Some(volume) = row.volume {
                     self.player.set_volume(volume);
@@ -200,11 +218,10 @@ impl FurChannel {
                     let wavedata = find_wavetable(info, wavedata_index).expect("Invalid wavetable");
                     let index = waveforms.add_waveform(wavedata)?;
                     self.player.set_waveform(index);
-                    self.effects.load_instrument(instr, self.clock.now_tick());
+                    self.effects.load_instrument(instr, self.tick);
                 }
-                self.effects
-                    .load_effects(info, &row.effects, self.clock.now_tick());
-                for effect in self.effects.effects(self.clock.now_tick()) {
+                self.effects.load_effects(info, &row.effects, self.tick);
+                for effect in self.effects.effects(self.tick) {
                     effect.apply(&mut self.player, info, waveforms)?;
                 }
                 if let Some(note) = row.note {
@@ -245,23 +262,23 @@ impl FurChannel {
                 }
             }
         }
-        self.advance_to(end_tick, info, waveforms)?;
+        self.advance_to(end_tick, clock, info, waveforms)?;
         Ok(next)
     }
 
     fn advance_to(
         &mut self,
         tick: u64,
+        clock: &Clock,
         info: &FurInfoBlock,
         waveforms: &mut WaveformSetData,
     ) -> Result<()> {
         for effect in self.effects.effects(tick) {
-            self.clock.advance(effect.tick);
-            self.player.advance_time(self.clock.now());
+            self.player.advance_time(clock.moment(effect.tick));
             effect.apply(&mut self.player, info, waveforms)?;
         }
-        self.clock.advance(tick);
-        self.player.advance_time(self.clock.now());
+        self.tick = tick;
+        self.player.advance_time(clock.moment(tick));
         Ok(())
     }
 
@@ -295,30 +312,86 @@ fn find_wavetable(info: &FurInfoBlock, index: usize) -> Option<[u8; 32]> {
 }
 
 struct Clock {
-    per_tick: Duration,
-    elapsed: Duration,
-    tick: u64,
+    tempos: BTreeMap<u64, Tempo>,
 }
 impl Clock {
     fn new(info: &FurInfoBlock) -> Self {
-        Self {
-            per_tick: Duration::from_secs_f32(1.0 / info.ticks_per_second),
-            elapsed: Duration::ZERO,
-            tick: 0,
+        let initial_tempo = Tempo::new(
+            Moment::START,
+            info.ticks_per_second,
+            info.virtual_tempo_numerator,
+            info.virtual_tempo_denominator,
+        );
+        let mut tempos = BTreeMap::new();
+        tempos.insert(0, initial_tempo);
+        Self { tempos }
+    }
+
+    fn moment(&self, tick: u64) -> Moment {
+        let (tempo, elapsed) = self.tempo_at(tick);
+        tempo.start + (tempo.per_tick * elapsed as u32)
+    }
+
+    fn set_virtual_numerator(&mut self, tick: u64, value: u16) {
+        let (tempo, elapsed) = self.tempo_at(tick);
+        if tempo.virtual_numerator == value {
+            return;
         }
+        let start = tempo.start + (tempo.per_tick * elapsed as u32);
+        let new_tempo = Tempo::new(
+            start,
+            tempo.ticks_per_second,
+            value,
+            tempo.virtual_denominator,
+        );
+        self.tempos.insert(tick, new_tempo);
     }
 
-    fn advance(&mut self, now_ticks: u64) {
-        self.elapsed = self.per_tick * now_ticks as u32;
-        self.tick = now_ticks;
+    fn set_virtual_denominator(&mut self, tick: u64, value: u16) {
+        let (tempo, elapsed) = self.tempo_at(tick);
+        if tempo.virtual_denominator == value {
+            return;
+        }
+        let start = tempo.start + (tempo.per_tick * elapsed as u32);
+        let new_tempo = Tempo::new(
+            start,
+            tempo.ticks_per_second,
+            tempo.virtual_numerator,
+            value,
+        );
+        self.tempos.insert(tick, new_tempo);
     }
 
-    fn now(&self) -> Moment {
-        Moment::START + self.elapsed
+    fn tempo_at(&self, tick: u64) -> (&Tempo, u64) {
+        let (start_tick, tempo) = self.tempos.range(..=tick).next_back().unwrap();
+        let elapsed = tick - *start_tick;
+        (tempo, elapsed)
     }
+}
 
-    fn now_tick(&self) -> u64 {
-        self.tick
+struct Tempo {
+    start: Moment,
+    ticks_per_second: f32,
+    virtual_numerator: u16,
+    virtual_denominator: u16,
+    per_tick: Duration,
+}
+impl Tempo {
+    fn new(
+        start: Moment,
+        ticks_per_second: f32,
+        virtual_numerator: u16,
+        virtual_denominator: u16,
+    ) -> Self {
+        Self {
+            start,
+            ticks_per_second,
+            virtual_numerator,
+            virtual_denominator,
+            per_tick: Duration::from_secs_f32(
+                virtual_denominator as f32 / (virtual_numerator as f32 * ticks_per_second),
+            ),
+        }
     }
 }
 
