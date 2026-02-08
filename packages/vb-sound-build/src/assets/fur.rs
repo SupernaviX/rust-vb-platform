@@ -463,7 +463,7 @@ impl ArpeggioEffectCursor {
         }
     }
 
-    fn values(&mut self, until_tick: u64) -> Vec<(u64, i16)> {
+    fn values(&mut self, until_tick: u64) -> Vec<(u64, f64)> {
         let mut result = vec![];
         while self.tick <= until_tick {
             let value = match self.offset {
@@ -471,11 +471,46 @@ impl ArpeggioEffectCursor {
                 1 => self.x,
                 _ => 0,
             };
-            result.push((self.tick, value as i16));
+            result.push((self.tick, value as f64));
             self.tick += self.speed as u64;
             self.offset += 1;
             if self.offset > 2 {
                 self.offset = 0
+            }
+        }
+        result
+    }
+}
+
+#[derive(Debug)]
+struct VibratoEffectCursor {
+    tick: u64,
+    speed: u8,
+    offset: u8,
+    depth: u8,
+}
+impl VibratoEffectCursor {
+    fn new(tick: u64, speed: u8, depth: u8) -> Self {
+        Self {
+            tick,
+            speed,
+            offset: 0,
+            depth,
+        }
+    }
+
+    fn values(&mut self, until_tick: u64) -> Vec<(u64, f64)> {
+        let mut result = vec![];
+        while self.tick <= until_tick {
+            // The vibrato pitch shift is controlled by a sine wave,
+            // with period of 64/speed steps and amplitude depth/16 semitones.
+            let t = self.offset as f64 * std::f64::consts::TAU / 64.0;
+            let value = t.sin() * self.depth as f64 / 16.0;
+            result.push((self.tick, value));
+            self.tick += 1;
+            self.offset += self.speed;
+            while self.offset >= 64 {
+                self.offset -= 64;
             }
         }
         result
@@ -516,6 +551,7 @@ struct EffectCursor {
     waveform: Option<MacroBodyCursor<u8>>,
     arpeggio_effect: Option<ArpeggioEffectCursor>,
     arpeggio_speed: u8,
+    vibrato_effect: Option<VibratoEffectCursor>,
     panning: (u8, u8),
     volume_slide: Option<SlideCursor>,
     pitch_slide: Option<SlideCursor>,
@@ -530,6 +566,7 @@ impl EffectCursor {
             waveform: None,
             arpeggio_effect: None,
             arpeggio_speed: 1,
+            vibrato_effect: None,
             panning: (15, 15),
             volume_slide: None,
             pitch_slide: None,
@@ -569,6 +606,9 @@ impl EffectCursor {
                 FurEffect::PitchSlideDown(speed) => {
                     self.load_pitch_slide(info, -(speed as i16), at_tick)
                 }
+                FurEffect::Vibrato(speed, depth) => {
+                    self.load_vibrato(speed, depth, at_tick);
+                }
                 FurEffect::SetPanning(left, right) => {
                     let left_vol = (left as f64 * 15.0 / 225.0) as u8;
                     let right_vol = (right as f64 * 15.0 / 225.0) as u8;
@@ -604,12 +644,24 @@ impl EffectCursor {
     }
 
     fn load_arpeggio(&mut self, x: u8, y: u8, at_tick: u64) {
-        self.arpeggio_effect = Some(ArpeggioEffectCursor::new(
-            at_tick,
-            self.arpeggio_speed,
-            x,
-            y,
-        ));
+        if x == 0 && y == 0 {
+            self.arpeggio_effect = None;
+        } else {
+            self.arpeggio_effect = Some(ArpeggioEffectCursor::new(
+                at_tick,
+                self.arpeggio_speed,
+                x,
+                y,
+            ));
+        }
+    }
+
+    fn load_vibrato(&mut self, speed: u8, depth: u8, at_tick: u64) {
+        if speed == 0 {
+            self.vibrato_effect = None;
+        } else {
+            self.vibrato_effect = Some(VibratoEffectCursor::new(at_tick, speed, depth));
+        }
     }
 
     fn load_pitch_slide(&mut self, info: &FurInfoBlock, speed: i16, at_tick: u64) {
@@ -645,7 +697,13 @@ impl EffectCursor {
         if let Some(arp) = self.arpeggio_effect.as_mut() {
             for (tick, arp) in arp.values(until_tick) {
                 let effect = effects.entry(tick).or_insert(MacroEffect::new(tick));
-                effect.pitch = Some(effect.pitch.unwrap_or_default() + arp as f64);
+                effect.pitch = Some(effect.pitch.unwrap_or_default() + arp);
+            }
+        }
+        if let Some(vib) = self.vibrato_effect.as_mut() {
+            for (tick, vib) in vib.values(until_tick) {
+                let effect = effects.entry(tick).or_insert(MacroEffect::new(tick));
+                effect.pitch = Some(effect.pitch.unwrap_or_default() + vib);
             }
         }
         if let Some(volume) = self.volume_slide.as_mut() {
