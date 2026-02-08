@@ -404,13 +404,13 @@ impl ArpeggioEffectCursor {
 }
 
 #[derive(Debug)]
-struct PitchSlideCursor {
+struct SlideCursor {
     tick: u64,
     speed: i16,
     value: i16,
 }
 
-impl PitchSlideCursor {
+impl SlideCursor {
     fn new(tick: u64, speed: i16) -> Self {
         Self {
             tick,
@@ -436,7 +436,8 @@ struct EffectCursor {
     arpeggio: Option<MacroBodyCursor<i8>>,
     arpeggio_effect: Option<ArpeggioEffectCursor>,
     arpeggio_speed: u8,
-    pitch_slide: Option<PitchSlideCursor>,
+    volume_slide: Option<SlideCursor>,
+    pitch_slide: Option<SlideCursor>,
     note_release: Option<u64>,
 }
 
@@ -447,6 +448,7 @@ impl EffectCursor {
             arpeggio: None,
             arpeggio_effect: None,
             arpeggio_speed: 1,
+            volume_slide: None,
             pitch_slide: None,
             note_release: None,
         }
@@ -480,6 +482,10 @@ impl EffectCursor {
                 FurEffect::PitchSlideDown(speed) => {
                     self.load_pitch_slide(info, -(speed as i16), at_tick)
                 }
+                FurEffect::VolumeSlide(down, up) => {
+                    let speed = up as i16 - down as i16;
+                    self.load_volume_slide(speed, at_tick);
+                }
                 FurEffect::ArpeggioSpeed(speed) => {
                     self.arpeggio_speed = speed;
                     if let Some(arp) = self.arpeggio_effect.as_mut() {
@@ -509,7 +515,11 @@ impl EffectCursor {
     fn load_pitch_slide(&mut self, info: &FurInfoBlock, speed: i16, at_tick: u64) {
         assert_eq!(info.linear_pitch, 1);
         let speed = info.pitch_slide_speed as i16 * speed;
-        self.pitch_slide = Some(PitchSlideCursor::new(at_tick, speed));
+        self.pitch_slide = Some(SlideCursor::new(at_tick, speed));
+    }
+
+    fn load_volume_slide(&mut self, speed: i16, at_tick: u64) {
+        self.volume_slide = Some(SlideCursor::new(at_tick, speed));
     }
 
     fn effects(&mut self, until_tick: u64) -> Vec<MacroEffect> {
@@ -528,6 +538,18 @@ impl EffectCursor {
             for (tick, arp) in arp.values(until_tick) {
                 let effect = effects.entry(tick).or_insert(MacroEffect::new(tick));
                 effect.pitch = Some(effect.pitch.unwrap_or_default() + arp as f64);
+            }
+        }
+        if let Some(volume) = self.volume_slide.as_mut() {
+            for (tick, volume) in volume.values(until_tick) {
+                let effect = effects.entry(tick).or_insert(MacroEffect::new(tick));
+                effect.volume = Some(
+                    effect
+                        .volume
+                        .unwrap_or_default()
+                        .saturating_add_signed(volume as i8)
+                        .clamp(0, 15),
+                )
             }
         }
         if let Some(pitch) = self.pitch_slide.as_mut() {
