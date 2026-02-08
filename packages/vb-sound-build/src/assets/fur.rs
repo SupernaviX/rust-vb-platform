@@ -185,7 +185,7 @@ impl FurChannel {
                 .collect();
             'pattern_loop: for row in rows {
                 let tick = start_tick + row.index * ticks_per_row;
-                self.advance_to(tick);
+                self.advance_to(tick, info, waveforms)?;
 
                 if let Some(volume) = row.volume {
                     self.player.set_volume(volume);
@@ -205,7 +205,7 @@ impl FurChannel {
                 self.effects
                     .load_effects(info, &row.effects, self.clock.now_tick());
                 for effect in self.effects.effects(self.clock.now_tick()) {
-                    effect.apply(&mut self.player);
+                    effect.apply(&mut self.player, info, waveforms)?;
                 }
                 if let Some(note) = row.note {
                     if note == 180 {
@@ -245,18 +245,24 @@ impl FurChannel {
                 }
             }
         }
-        self.advance_to(end_tick);
+        self.advance_to(end_tick, info, waveforms)?;
         Ok(next)
     }
 
-    fn advance_to(&mut self, tick: u64) {
+    fn advance_to(
+        &mut self,
+        tick: u64,
+        info: &FurInfoBlock,
+        waveforms: &mut WaveformSetData,
+    ) -> Result<()> {
         for effect in self.effects.effects(tick) {
             self.clock.advance(effect.tick);
             self.player.advance_time(self.clock.now());
-            effect.apply(&mut self.player);
+            effect.apply(&mut self.player, info, waveforms)?;
         }
         self.clock.advance(tick);
         self.player.advance_time(self.clock.now());
+        Ok(())
     }
 
     fn build(self, name: &str) -> Option<ChannelData> {
@@ -434,6 +440,7 @@ impl SlideCursor {
 struct EffectCursor {
     volume: Option<MacroBodyCursor<u8>>,
     arpeggio: Option<MacroBodyCursor<i8>>,
+    waveform: Option<MacroBodyCursor<u8>>,
     arpeggio_effect: Option<ArpeggioEffectCursor>,
     arpeggio_speed: u8,
     volume_slide: Option<SlideCursor>,
@@ -446,6 +453,7 @@ impl EffectCursor {
         Self {
             volume: None,
             arpeggio: None,
+            waveform: None,
             arpeggio_effect: None,
             arpeggio_speed: 1,
             volume_slide: None,
@@ -457,12 +465,16 @@ impl EffectCursor {
     fn load_instrument(&mut self, instr: &FurInstrument, at_tick: u64) {
         self.volume = None;
         self.arpeggio = None;
+        self.waveform = None;
         if let Some(macros) = instr.macros() {
             for m in macros {
                 match m {
                     FurMacro::Volume(v) => self.volume = Some(MacroBodyCursor::load(v, at_tick)),
                     FurMacro::Arpeggio(v) => {
                         self.arpeggio = Some(MacroBodyCursor::load(v, at_tick))
+                    }
+                    FurMacro::Waveform(v) => {
+                        self.waveform = Some(MacroBodyCursor::load(v, at_tick))
                     }
                     _ => {}
                 }
@@ -534,6 +546,14 @@ impl EffectCursor {
                 effects.entry(tick).or_insert(MacroEffect::new(tick)).pitch = Some(arp as f64);
             }
         }
+        if let Some(wav) = self.waveform.as_mut() {
+            for (tick, wav) in wav.values(until_tick) {
+                effects
+                    .entry(tick)
+                    .or_insert(MacroEffect::new(tick))
+                    .waveform = Some(wav);
+            }
+        }
         if let Some(arp) = self.arpeggio_effect.as_mut() {
             for (tick, arp) in arp.values(until_tick) {
                 let effect = effects.entry(tick).or_insert(MacroEffect::new(tick));
@@ -571,6 +591,7 @@ struct MacroEffect {
     tick: u64,
     volume: Option<u8>,
     pitch: Option<f64>,
+    waveform: Option<u8>,
     release: bool,
 }
 impl MacroEffect {
@@ -579,10 +600,16 @@ impl MacroEffect {
             tick,
             volume: None,
             pitch: None,
+            waveform: None,
             release: false,
         }
     }
-    fn apply(&self, player: &mut ChannelPlayer) {
+    fn apply(
+        &self,
+        player: &mut ChannelPlayer,
+        info: &FurInfoBlock,
+        waveforms: &mut WaveformSetData,
+    ) -> Result<()> {
         if let Some(volume) = self.volume {
             player.set_envelope(volume);
         }
@@ -592,5 +619,12 @@ impl MacroEffect {
         if self.release {
             player.stop_note();
         }
+        if let Some(wavedata_index) = self.waveform {
+            let wavedata =
+                find_wavetable(info, wavedata_index as usize).expect("Invalid wavetable");
+            let index = waveforms.add_waveform(wavedata)?;
+            player.set_waveform(index);
+        }
+        Ok(())
     }
 }

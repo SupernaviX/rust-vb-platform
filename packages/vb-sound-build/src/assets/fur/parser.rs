@@ -155,6 +155,8 @@ pub enum FurMacro {
     Volume(FurMacroBody<u8>),
     #[br(magic = 1u8)]
     Arpeggio(FurMacroBody<i8>),
+    #[br(magic = 3u8)]
+    Waveform(FurMacroBody<u8>),
     #[br(magic = 255u8)]
     End,
 }
