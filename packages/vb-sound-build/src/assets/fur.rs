@@ -87,7 +87,7 @@ impl FurDecoder {
                 && order == info.orders_length as usize - 1
             {
                 next = if self.looping {
-                    NextPosition::NextPattern
+                    NextPosition::Pattern { order: 0, row: 0 }
                 } else {
                     NextPosition::Stop
                 }
@@ -184,6 +184,7 @@ impl FurChannel {
         info: &FurInfoBlock,
         waveforms: &mut WaveformSetData,
     ) -> Result<NextPosition> {
+        println!("channel {} order {order}", self.channel);
         self.player.advance_time(clock.moment(self.tick));
         self.player.start_pattern(order as u8);
         self.played_orders.insert(order);
@@ -294,7 +295,7 @@ impl FurChannel {
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum NextPosition {
     NextPattern,
     Pattern { order: usize, row: u64 },
