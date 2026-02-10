@@ -218,9 +218,9 @@ impl FurChannel {
                     let wavedata = find_wavetable(info, wavedata_index).expect("Invalid wavetable");
                     let index = waveforms.add_waveform(wavedata)?;
                     self.player.set_waveform(index);
-                    self.effects.load_instrument(instr, self.tick);
+                    self.effects.load_instrument(instr);
                 }
-                self.effects.load_effects(info, &row.effects, self.tick);
+                self.effects.load_effects(info, &row.effects);
                 self.player.set_volume(self.effects.panning);
                 for effect in self.effects.effects(self.tick) {
                     effect.apply(&mut self.player, info, waveforms)?;
@@ -397,159 +397,184 @@ impl Tempo {
 }
 
 #[derive(Debug)]
-struct MacroBodyCursor<T> {
+struct MacroCursor<T> {
     data: Vec<T>,
+    index: usize,
+    delay: u64,
     speed: u64,
     loop_to: Option<usize>,
-    next_event: Option<(u64, usize)>,
 }
-impl<T> MacroBodyCursor<T>
+impl<T> MacroCursor<T>
 where
     T: BinRead + Copy + std::fmt::Debug,
     for<'a> T::Args<'a>: Default + Clone,
 {
-    fn load(body: &FurMacroBody<T>, at_tick: u64) -> Self {
-        let next_event = if body.data.is_empty() {
-            None
-        } else {
-            Some((body.macro_delay as u64 + at_tick, 0))
-        };
+    fn load(body: &FurMacroBody<T>) -> Self {
+        let speed = body.macro_speed as u64 - 1;
         Self {
             data: body.data.clone(),
-            speed: body.macro_speed as u64,
+            index: 0,
+            delay: body.macro_delay as u64 + speed,
+            speed,
             loop_to: body
                 .macro_loop
                 .try_into()
                 .ok()
                 .filter(|l| *l < body.data.len()),
-            next_event,
         }
     }
+}
 
-    fn values(&mut self, until: u64) -> Vec<(u64, T)> {
-        let mut result = vec![];
-        while let Some((time, value)) = self.next_value(until) {
-            result.push((time, value));
-        }
-        result
-    }
+impl<T> Iterator for MacroCursor<T>
+where
+    T: Copy,
+{
+    type Item = T;
 
-    fn next_value(&mut self, until: u64) -> Option<(u64, T)> {
-        let (time, idx) = self.next_event.take_if(|(t, _)| *t <= until)?;
-        if idx < self.data.len() - 1 {
-            self.next_event = Some((time + self.speed, idx + 1));
-        } else if let Some(loop_to) = self.loop_to {
-            self.next_event = Some((time + self.speed, loop_to.min(self.data.len() - 1)));
+    fn next(&mut self) -> Option<Self::Item> {
+        let value = *self.data.get(self.index)?;
+        if self.delay == 0 {
+            self.delay = self.speed;
+            if self.index + 1 < self.data.len() {
+                self.index += 1;
+            } else if let Some(to) = self.loop_to {
+                self.index = to;
+            }
+        } else {
+            self.delay -= 1;
         }
-        Some((time, self.data[idx]))
+        Some(value)
     }
 }
 
 #[derive(Debug)]
 struct ArpeggioEffectCursor {
-    tick: u64,
+    index: u8,
+    delay: u8,
     speed: u8,
-    offset: u8,
     x: u8,
     y: u8,
 }
 impl ArpeggioEffectCursor {
-    fn new(tick: u64, speed: u8, x: u8, y: u8) -> Self {
+    fn new(speed: u8, x: u8, y: u8) -> Self {
         Self {
-            tick,
-            speed,
-            offset: 0,
+            index: 0,
+            delay: speed - 1,
+            speed: speed - 1,
             x,
             y,
         }
     }
+}
+impl Iterator for ArpeggioEffectCursor {
+    type Item = f64;
 
-    fn values(&mut self, until_tick: u64) -> Vec<(u64, f64)> {
-        let mut result = vec![];
-        while self.tick <= until_tick {
-            let value = match self.offset {
-                2 => self.y,
-                1 => self.x,
-                _ => 0,
-            };
-            result.push((self.tick, value as f64));
-            self.tick += self.speed as u64;
-            self.offset += 1;
-            if self.offset > 2 {
-                self.offset = 0
+    fn next(&mut self) -> Option<Self::Item> {
+        let value = match self.index {
+            2 => self.y,
+            1 => self.x,
+            _ => 0,
+        };
+        if self.delay == 0 {
+            self.delay = self.speed;
+            self.index += 1;
+            if self.index > 2 {
+                self.index = 0;
             }
+        } else {
+            self.delay -= 1;
         }
-        result
+        Some(value as f64)
     }
 }
 
 #[derive(Debug)]
 struct VibratoEffectCursor {
-    tick: u64,
+    index: u8,
     speed: u8,
-    offset: u8,
     depth: u8,
 }
 impl VibratoEffectCursor {
-    fn new(tick: u64, speed: u8, depth: u8) -> Self {
+    fn new(speed: u8, depth: u8) -> Self {
         Self {
-            tick,
+            index: 0,
             speed,
-            offset: 0,
             depth,
         }
     }
+}
+impl Iterator for VibratoEffectCursor {
+    type Item = f64;
 
-    fn values(&mut self, until_tick: u64) -> Vec<(u64, f64)> {
-        let mut result = vec![];
-        while self.tick <= until_tick {
-            // The vibrato pitch shift is controlled by a sine wave,
-            // with period of 64/speed steps and amplitude depth/16 semitones.
-            let t = self.offset as f64 * std::f64::consts::TAU / 64.0;
-            let value = t.sin() * self.depth as f64 / 16.0;
-            result.push((self.tick, value));
-            self.tick += 1;
-            self.offset += self.speed;
-            while self.offset >= 64 {
-                self.offset -= 64;
-            }
+    fn next(&mut self) -> Option<Self::Item> {
+        // The vibrato pitch shift is controlled by a sine wave,
+        // with period of 64/speed steps and amplitude depth/16 semitones.
+        let t = self.index as f64 * std::f64::consts::TAU / 64.0;
+        let value = t.sin() * self.depth as f64 / 16.0;
+        self.index += self.speed;
+        while self.index > 64 {
+            self.index -= 64;
         }
-        result
+        Some(value)
     }
 }
 
 #[derive(Debug)]
 struct SlideCursor {
-    tick: u64,
     speed: i16,
     value: i16,
 }
-
 impl SlideCursor {
-    fn new(tick: u64, speed: i16) -> Self {
-        Self {
-            tick,
-            speed,
-            value: 0,
-        }
+    fn new(speed: i16) -> Self {
+        Self { speed, value: 0 }
     }
+}
+impl Iterator for SlideCursor {
+    type Item = i16;
 
-    fn values(&mut self, until_tick: u64) -> Vec<(u64, i16)> {
-        let mut result = vec![];
-        while self.tick <= until_tick {
-            result.push((self.tick, self.value));
-            self.tick += 1;
-            self.value += self.speed;
+    fn next(&mut self) -> Option<Self::Item> {
+        let value = self.value;
+        self.value += self.speed;
+        Some(value)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct EffectEntry {
+    tick: u64,
+    volume: f64,
+    pitch: f64,
+    waveform: Option<u8>,
+    release: bool,
+}
+impl EffectEntry {
+    fn apply(
+        &self,
+        player: &mut ChannelPlayer,
+        info: &FurInfoBlock,
+        waveforms: &mut WaveformSetData,
+    ) -> Result<()> {
+        player.set_envelope_multiplier(self.volume);
+        player.set_pitch_shift(self.pitch);
+        if self.release {
+            player.stop_note();
         }
-        result
+        if let Some(wavedata_index) = self.waveform {
+            let wavedata =
+                find_wavetable(info, wavedata_index as usize).expect("Invalid wavetable");
+            let index = waveforms.add_waveform(wavedata)?;
+            player.set_waveform(index);
+        }
+        Ok(())
     }
 }
 
 #[derive(Debug)]
 struct EffectCursor {
-    volume: Option<MacroBodyCursor<u8>>,
-    arpeggio: Option<MacroBodyCursor<i8>>,
-    waveform: Option<MacroBodyCursor<u8>>,
+    tick: u64,
+    instrument_volume: Option<MacroCursor<u8>>,
+    instrument_arpeggio: Option<MacroCursor<i8>>,
+    waveform: Option<MacroCursor<u8>>,
     arpeggio_effect: Option<ArpeggioEffectCursor>,
     arpeggio_speed: u8,
     vibrato_effect: Option<VibratoEffectCursor>,
@@ -562,8 +587,9 @@ struct EffectCursor {
 impl EffectCursor {
     fn new() -> Self {
         Self {
-            volume: None,
-            arpeggio: None,
+            tick: 0,
+            instrument_volume: None,
+            instrument_arpeggio: None,
             waveform: None,
             arpeggio_effect: None,
             arpeggio_speed: 1,
@@ -575,40 +601,33 @@ impl EffectCursor {
         }
     }
 
-    fn load_instrument(&mut self, instr: &FurInstrument, at_tick: u64) {
-        self.volume = None;
-        self.arpeggio = None;
+    fn load_instrument(&mut self, instr: &FurInstrument) {
+        self.instrument_volume = None;
+        self.instrument_arpeggio = None;
         self.waveform = None;
         if let Some(macros) = instr.macros() {
             for m in macros {
                 match m {
-                    FurMacro::Volume(v) => self.volume = Some(MacroBodyCursor::load(v, at_tick)),
-                    FurMacro::Arpeggio(v) => {
-                        self.arpeggio = Some(MacroBodyCursor::load(v, at_tick))
-                    }
-                    FurMacro::Waveform(v) => {
-                        self.waveform = Some(MacroBodyCursor::load(v, at_tick))
-                    }
+                    FurMacro::Volume(v) => self.instrument_volume = Some(MacroCursor::load(v)),
+                    FurMacro::Arpeggio(v) => self.instrument_arpeggio = Some(MacroCursor::load(v)),
+                    FurMacro::Waveform(v) => self.waveform = Some(MacroCursor::load(v)),
                     _ => {}
                 }
             }
         }
     }
 
-    fn load_effects(&mut self, info: &FurInfoBlock, effects: &[FurEffect], at_tick: u64) {
+    fn load_effects(&mut self, info: &FurInfoBlock, effects: &[FurEffect]) {
+        self.tick = self.tick.saturating_sub(1);
         for &effect in effects {
             match effect {
                 FurEffect::Arpeggio(x, y) => {
-                    self.load_arpeggio(x, y, at_tick);
+                    self.load_arpeggio(x, y);
                 }
-                FurEffect::PitchSlideUp(speed) => {
-                    self.load_pitch_slide(info, speed as i16, at_tick)
-                }
-                FurEffect::PitchSlideDown(speed) => {
-                    self.load_pitch_slide(info, -(speed as i16), at_tick)
-                }
+                FurEffect::PitchSlideUp(speed) => self.load_pitch_slide(info, speed as i16),
+                FurEffect::PitchSlideDown(speed) => self.load_pitch_slide(info, -(speed as i16)),
                 FurEffect::Vibrato(speed, depth) => {
-                    self.load_vibrato(speed, depth, at_tick);
+                    self.load_vibrato(speed, depth);
                 }
                 FurEffect::SetPanning(left, right) => {
                     let left_vol = (left as f64 * 15.0 / 225.0) as u8;
@@ -617,7 +636,7 @@ impl EffectCursor {
                 }
                 FurEffect::VolumeSlide(down, up) => {
                     let speed = up as i16 - down as i16;
-                    self.load_volume_slide(speed, at_tick);
+                    self.load_volume_slide(speed);
                 }
                 FurEffect::SetVolumeLeft(value) => {
                     let vol = (value as f64 * 15.0 / 225.0) as u8;
@@ -634,7 +653,7 @@ impl EffectCursor {
                     }
                 }
                 FurEffect::NoteCut(ticks) | FurEffect::NoteRelease(ticks) => {
-                    self.note_release = Some(at_tick + ticks as u64);
+                    self.note_release = Some(self.tick + ticks as u64);
                 }
                 FurEffect::Unknown(effect, value) => {
                     panic!("unknown effect: {effect:02x}{value:02x}");
@@ -644,134 +663,75 @@ impl EffectCursor {
         }
     }
 
-    fn load_arpeggio(&mut self, x: u8, y: u8, at_tick: u64) {
+    fn load_arpeggio(&mut self, x: u8, y: u8) {
         if x == 0 && y == 0 {
             self.arpeggio_effect = None;
         } else {
-            self.arpeggio_effect = Some(ArpeggioEffectCursor::new(
-                at_tick,
-                self.arpeggio_speed,
-                x,
-                y,
-            ));
+            self.arpeggio_effect = Some(ArpeggioEffectCursor::new(self.arpeggio_speed, x, y));
         }
     }
 
-    fn load_vibrato(&mut self, speed: u8, depth: u8, at_tick: u64) {
+    fn load_vibrato(&mut self, speed: u8, depth: u8) {
         if speed == 0 {
             self.vibrato_effect = None;
         } else {
-            self.vibrato_effect = Some(VibratoEffectCursor::new(at_tick, speed, depth));
+            self.vibrato_effect = Some(VibratoEffectCursor::new(speed, depth));
         }
     }
 
-    fn load_pitch_slide(&mut self, info: &FurInfoBlock, speed: i16, at_tick: u64) {
+    fn load_pitch_slide(&mut self, info: &FurInfoBlock, speed: i16) {
         assert_eq!(info.linear_pitch, 1);
         let speed = info.pitch_slide_speed as i16 * speed;
-        self.pitch_slide = Some(SlideCursor::new(at_tick, speed));
+        self.pitch_slide = Some(SlideCursor::new(speed));
     }
 
-    fn load_volume_slide(&mut self, speed: i16, at_tick: u64) {
-        self.volume_slide = Some(SlideCursor::new(at_tick, speed));
+    fn load_volume_slide(&mut self, speed: i16) {
+        if speed == 0 {
+            self.volume_slide = None;
+        } else {
+            self.volume_slide = Some(SlideCursor::new(speed));
+        }
     }
 
-    fn effects(&mut self, until_tick: u64) -> Vec<MacroEffect> {
-        let mut effects = BTreeMap::new();
-        if let Some(vol) = self.volume.as_mut() {
-            for (tick, vol) in vol.values(until_tick) {
-                effects.entry(tick).or_insert(MacroEffect::new(tick)).volume = Some(vol);
+    fn effects(&mut self, until_tick: u64) -> Vec<EffectEntry> {
+        let mut result = vec![];
+        while self.tick <= until_tick {
+            let mut volume = 1.0;
+            if let Some(vol) = self.instrument_volume.as_mut().and_then(|m| m.next()) {
+                volume *= vol as f64 / 15.0;
             }
-        }
-        if let Some(arp) = self.arpeggio.as_mut() {
-            for (tick, arp) in arp.values(until_tick) {
-                effects.entry(tick).or_insert(MacroEffect::new(tick)).pitch = Some(arp as f64);
+            if let Some(vol) = self.volume_slide.as_mut().and_then(|m| m.next()) {
+                let vol = vol.clamp(0, 15) as f64 / 15.0;
+                volume *= vol;
             }
-        }
-        if let Some(wav) = self.waveform.as_mut() {
-            for (tick, wav) in wav.values(until_tick) {
-                effects
-                    .entry(tick)
-                    .or_insert(MacroEffect::new(tick))
-                    .waveform = Some(wav);
-            }
-        }
-        if let Some(arp) = self.arpeggio_effect.as_mut() {
-            for (tick, arp) in arp.values(until_tick) {
-                let effect = effects.entry(tick).or_insert(MacroEffect::new(tick));
-                effect.pitch = Some(effect.pitch.unwrap_or_default() + arp);
-            }
-        }
-        if let Some(vib) = self.vibrato_effect.as_mut() {
-            for (tick, vib) in vib.values(until_tick) {
-                let effect = effects.entry(tick).or_insert(MacroEffect::new(tick));
-                effect.pitch = Some(effect.pitch.unwrap_or_default() + vib);
-            }
-        }
-        if let Some(volume) = self.volume_slide.as_mut() {
-            for (tick, volume) in volume.values(until_tick) {
-                let effect = effects.entry(tick).or_insert(MacroEffect::new(tick));
-                effect.volume = Some(
-                    effect
-                        .volume
-                        .unwrap_or_default()
-                        .saturating_add_signed(volume as i8)
-                        .clamp(0, 15),
-                )
-            }
-        }
-        if let Some(pitch) = self.pitch_slide.as_mut() {
-            for (tick, pitch) in pitch.values(until_tick) {
-                let effect = effects.entry(tick).or_insert(MacroEffect::new(tick));
-                effect.pitch = Some(effect.pitch.unwrap_or_default() + (pitch as f64 / 128.0));
-            }
-        }
-        if let Some(tick) = self.note_release.take_if(|t| *t <= until_tick) {
-            let effect = effects.entry(tick).or_insert(MacroEffect::new(tick));
-            effect.release = true;
-        }
-        effects.into_values().collect()
-    }
-}
 
-#[derive(Debug)]
-struct MacroEffect {
-    tick: u64,
-    volume: Option<u8>,
-    pitch: Option<f64>,
-    waveform: Option<u8>,
-    release: bool,
-}
-impl MacroEffect {
-    fn new(tick: u64) -> Self {
-        Self {
-            tick,
-            volume: None,
-            pitch: None,
-            waveform: None,
-            release: false,
+            let mut pitch = 0.0;
+            if let Some(arp) = self.instrument_arpeggio.as_mut().and_then(|m| m.next()) {
+                pitch += arp as f64;
+            }
+            if let Some(arp) = self.arpeggio_effect.as_mut().and_then(|m| m.next()) {
+                pitch += arp;
+            }
+            if let Some(vib) = self.vibrato_effect.as_mut().and_then(|m| m.next()) {
+                pitch += vib;
+            }
+            if let Some(p) = self.pitch_slide.as_mut().and_then(|m| m.next()) {
+                pitch += p as f64 / 128.0;
+            }
+
+            let waveform = self.waveform.as_mut().and_then(|m| m.next());
+
+            let release = self.note_release.take_if(|t| *t == self.tick).is_some();
+
+            result.push(EffectEntry {
+                tick: self.tick,
+                volume,
+                pitch,
+                waveform,
+                release,
+            });
+            self.tick += 1;
         }
-    }
-    fn apply(
-        &self,
-        player: &mut ChannelPlayer,
-        info: &FurInfoBlock,
-        waveforms: &mut WaveformSetData,
-    ) -> Result<()> {
-        if let Some(volume) = self.volume {
-            player.set_envelope_multiplier(volume as f64 / 15.0);
-        }
-        if let Some(pitch) = self.pitch {
-            player.set_pitch_shift(pitch);
-        }
-        if self.release {
-            player.stop_note();
-        }
-        if let Some(wavedata_index) = self.waveform {
-            let wavedata =
-                find_wavetable(info, wavedata_index as usize).expect("Invalid wavetable");
-            let index = waveforms.add_waveform(wavedata)?;
-            player.set_waveform(index);
-        }
-        Ok(())
+        result
     }
 }
