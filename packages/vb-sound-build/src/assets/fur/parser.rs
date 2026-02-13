@@ -177,7 +177,7 @@ where
 {
     macro_length: u8,
     pub macro_loop: i8,
-    macro_release: i8,
+    pub macro_release: i8,
     macro_mode: u8,
     macro_flags: u8,
     pub macro_delay: u8,

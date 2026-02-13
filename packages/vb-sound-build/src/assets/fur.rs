@@ -225,11 +225,14 @@ impl FurChannel {
                     effect.apply(&mut self.player, info, waveforms)?;
                 }
                 if let Some(note) = row.note {
-                    if note == 180 {
-                        if let Some(key) = self.player.current_note() {
-                            self.player.start_note(key);
-                        }
-                    } else if note > 180 {
+                    if note == 182 {
+                        // macro release
+                        self.effects.release_macros();
+                    } else if note == 181 {
+                        // note release (seems to do the same as macro release)
+                        self.effects.release_macros();
+                    } else if note == 180 {
+                        // note off
                         self.player.stop_note();
                     } else {
                         self.player.start_note(note - 48);
@@ -401,6 +404,7 @@ struct MacroCursor<T> {
     index: usize,
     delay: u64,
     speed: u64,
+    release: Option<usize>,
     loop_to: Option<usize>,
 }
 impl<T> MacroCursor<T>
@@ -420,7 +424,16 @@ where
                 .try_into()
                 .ok()
                 .filter(|l| *l < body.data.len()),
+            release: body
+                .macro_release
+                .try_into()
+                .ok()
+                .filter(|r| *r < body.data.len()),
         }
+    }
+
+    fn release(&mut self) {
+        self.release = None;
     }
 }
 
@@ -434,10 +447,12 @@ where
         let value = *self.data.get(self.index)?;
         if self.delay == 0 {
             self.delay = self.speed;
-            if self.index + 1 < self.data.len() {
-                self.index += 1;
-            } else if let Some(to) = self.loop_to {
-                self.index = to;
+            if self.release != Some(self.index) {
+                if self.index + 1 < self.data.len() {
+                    self.index += 1;
+                } else if let Some(to) = self.loop_to {
+                    self.index = to;
+                }
             }
         } else {
             self.delay -= 1;
@@ -573,7 +588,7 @@ struct EffectCursor {
     tick: u64,
     instrument_volume: Option<MacroCursor<u8>>,
     instrument_arpeggio: Option<MacroCursor<i8>>,
-    waveform: Option<MacroCursor<u8>>,
+    instrument_waveform: Option<MacroCursor<u8>>,
     arpeggio_effect: Option<ArpeggioEffectCursor>,
     arpeggio_speed: u8,
     vibrato_effect: Option<VibratoEffectCursor>,
@@ -589,7 +604,7 @@ impl EffectCursor {
             tick: 0,
             instrument_volume: None,
             instrument_arpeggio: None,
-            waveform: None,
+            instrument_waveform: None,
             arpeggio_effect: None,
             arpeggio_speed: 1,
             vibrato_effect: None,
@@ -603,13 +618,13 @@ impl EffectCursor {
     fn load_instrument(&mut self, instr: &FurInstrument) {
         self.instrument_volume = None;
         self.instrument_arpeggio = None;
-        self.waveform = None;
+        self.instrument_waveform = None;
         if let Some(macros) = instr.macros() {
             for m in macros {
                 match m {
                     FurMacro::Volume(v) => self.instrument_volume = Some(MacroCursor::load(v)),
                     FurMacro::Arpeggio(v) => self.instrument_arpeggio = Some(MacroCursor::load(v)),
-                    FurMacro::Waveform(v) => self.waveform = Some(MacroCursor::load(v)),
+                    FurMacro::Waveform(v) => self.instrument_waveform = Some(MacroCursor::load(v)),
                     _ => {}
                 }
             }
@@ -629,7 +644,7 @@ impl EffectCursor {
                     self.load_vibrato(speed, depth);
                 }
                 FurEffect::SetPanning(left, right) => self.panning = (left, right),
-                FurEffect::VolumeSlide(down, up) => {
+                FurEffect::VolumeSlide(up, down) => {
                     let speed = up as i16 - down as i16;
                     self.load_volume_slide(speed);
                 }
@@ -688,16 +703,28 @@ impl EffectCursor {
         }
     }
 
+    fn release_macros(&mut self) {
+        if let Some(vol) = &mut self.instrument_volume {
+            vol.release();
+        }
+        if let Some(arp) = &mut self.instrument_arpeggio {
+            arp.release();
+        }
+        if let Some(wav) = &mut self.instrument_waveform {
+            wav.release();
+        }
+    }
+
     fn effects(&mut self, until_tick: u64) -> Vec<EffectEntry> {
         let mut result = vec![];
         while self.tick <= until_tick {
             let mut volume = 1.0;
             if let Some(vol) = self.instrument_volume.as_mut().and_then(|m| m.next()) {
-                volume *= vol as f64 / 15.0;
+                volume = vol as f64 / 15.0;
             }
             if let Some(vol) = self.volume_slide.as_mut().and_then(|m| m.next()) {
-                let vol = vol.clamp(0, 15) as f64 / 15.0;
-                volume *= vol;
+                let vol = vol.clamp(0, 63) as f64 / 63.0;
+                volume = vol;
             }
 
             let mut pitch = 0.0;
@@ -714,7 +741,7 @@ impl EffectCursor {
                 pitch += p as f64 / 128.0;
             }
 
-            let waveform = self.waveform.as_mut().and_then(|m| m.next());
+            let waveform = self.instrument_waveform.as_mut().and_then(|m| m.next());
 
             let release = self.note_release.take_if(|t| *t == self.tick).is_some();
 
