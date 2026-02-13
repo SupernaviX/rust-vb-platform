@@ -56,9 +56,11 @@ pub struct ChannelPlayer {
     now: Option<Moment>,
     note_started: Option<Moment>,
     last_key: Option<u8>,
+    stale_key: bool,
     last_waveform: Option<u8>,
     last_volume: Option<(u8, u8)>,
     last_envelope: Option<u8>,
+    stale_envelope: bool,
     last_tap: Option<u8>,
     envelope_multiplier: f64,
     pitch_shift: f64,
@@ -75,9 +77,11 @@ impl ChannelPlayer {
             now: None,
             note_started: None,
             last_key: None,
+            stale_key: false,
             last_waveform: None,
             last_volume: None,
             last_envelope: None,
+            stale_envelope: false,
             last_tap: None,
             envelope_multiplier: 1.0,
             pitch_shift: 0.0,
@@ -91,6 +95,13 @@ impl ChannelPlayer {
 
     pub fn start_pattern(&mut self, index: u8) {
         self.current_row().start_pattern = Some(index);
+        // forget our current state when a new pattern starts,
+        // so that we re-set everything when looping back to it
+        self.stale_key = true;
+        self.last_waveform = None;
+        self.last_volume = None;
+        self.stale_envelope = true;
+        self.last_tap = None;
     }
 
     pub fn go_to_pattern(&mut self, index: u8) {
@@ -116,9 +127,10 @@ impl ChannelPlayer {
     }
 
     pub fn set_envelope(&mut self, envelope: u8) {
-        if self.last_envelope != Some(envelope) {
+        if self.last_envelope != Some(envelope) || self.stale_envelope {
             self.current_row().envelope = Some((envelope as f64 * self.envelope_multiplier) as u8);
             self.last_envelope = Some(envelope);
+            self.stale_envelope = false;
         }
     }
 
@@ -154,11 +166,12 @@ impl ChannelPlayer {
         if self.noise {
             key = (key as u16 * 3 / 4) as u8;
         }
-        if self.last_key != Some(key) {
+        if self.last_key != Some(key) || self.stale_key {
             let frequency =
                 key_to_clocks(key, self.effects.shift + self.pitch_shift).expect("note is too low");
             self.current_row().frequency = Some(frequency);
             self.last_key = Some(key);
+            self.stale_key = false;
         }
         self.current_row().note = Some(NoteEvent::Start(NoteStart { interval: None }));
         self.note_started = self.now;

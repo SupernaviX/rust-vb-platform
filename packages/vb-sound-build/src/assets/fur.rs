@@ -184,7 +184,6 @@ impl FurChannel {
         info: &FurInfoBlock,
         waveforms: &mut WaveformSetData,
     ) -> Result<NextPosition> {
-        println!("channel {} order {order}", self.channel);
         self.player.advance_time(clock.moment(self.tick));
         self.player.start_pattern(order as u8);
         self.played_orders.insert(order);
@@ -629,11 +628,7 @@ impl EffectCursor {
                 FurEffect::Vibrato(speed, depth) => {
                     self.load_vibrato(speed, depth);
                 }
-                FurEffect::SetPanning(left, right) => {
-                    let left_vol = (left as f64 * 15.0 / 225.0) as u8;
-                    let right_vol = (right as f64 * 15.0 / 225.0) as u8;
-                    self.panning = (left_vol, right_vol)
-                }
+                FurEffect::SetPanning(left, right) => self.panning = (left, right),
                 FurEffect::VolumeSlide(down, up) => {
                     let speed = up as i16 - down as i16;
                     self.load_volume_slide(speed);
