@@ -62,7 +62,6 @@ pub struct ChannelPlayer {
     last_envelope: Option<u8>,
     stale_envelope: bool,
     last_tap: Option<u8>,
-    envelope_multiplier: f64,
     pitch_shift: f64,
 }
 
@@ -83,7 +82,6 @@ impl ChannelPlayer {
             last_envelope: None,
             stale_envelope: false,
             last_tap: None,
-            envelope_multiplier: 1.0,
             pitch_shift: 0.0,
         }
     }
@@ -128,18 +126,9 @@ impl ChannelPlayer {
 
     pub fn set_envelope(&mut self, envelope: u8) {
         if self.last_envelope != Some(envelope) || self.stale_envelope {
-            self.current_row().envelope = Some((envelope as f64 * self.envelope_multiplier) as u8);
+            self.current_row().envelope = Some(envelope);
             self.last_envelope = Some(envelope);
             self.stale_envelope = false;
-        }
-    }
-
-    pub fn set_envelope_multiplier(&mut self, multiplier: f64) {
-        if self.envelope_multiplier != multiplier {
-            if let Some(envelope) = self.last_envelope {
-                self.current_row().envelope = Some((envelope as f64 * multiplier) as u8);
-            }
-            self.envelope_multiplier = multiplier;
         }
     }
 
