@@ -12,4 +12,4 @@ bench = false
 
 [dependencies]
 bitfield-struct = "0.12"
-fixed = "1.29"
+fixed = "1.31"
