@@ -144,6 +144,9 @@ impl ChannelPlayer {
         if self.note_started.is_some() {
             self.stop_note();
         }
+        if let Some(envelope) = self.last_envelope {
+            self.set_envelope(envelope);
+        }
         if self.noise {
             key = (key as u16 * 3 / 4) as u8;
         }
@@ -242,7 +245,9 @@ pub struct ChannelBuilder {
 impl ChannelBuilder {
     pub fn build(self) -> ChannelData {
         let mut encoder = EventEncoder::new();
+        println!("{}:", self.name);
         for event in self.player.finish() {
+            println!("  {event:?}");
             encoder.encode(event);
         }
         ChannelData {
