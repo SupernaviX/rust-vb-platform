@@ -171,10 +171,9 @@ impl FurChannel {
         info: &FurInfoBlock,
         waveforms: &mut WaveformSetData,
     ) -> Result<()> {
-        let mut new_tick = self.next_tick;
-        for update in self.state.advance(tick - self.next_tick) {
+        for (new_tick, update) in (self.next_tick..).zip(self.state.advance(tick - self.next_tick))
+        {
             self.player.advance_time(clock.moment(new_tick));
-            new_tick += 1;
             update.apply(&mut self.player, info, waveforms)?;
         }
         self.next_tick = tick;
