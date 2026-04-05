@@ -27,21 +27,7 @@ pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
     }
 
     for image in assets.images {
-        let cell_count = image.cells.len();
-        let celldata_filename = format!("cells.{}.bin", image.name);
-        let mut celldata_file = opts.output_file(&celldata_filename)?;
-        for cell in image.cells {
-            celldata_file.write_all(&cell.to_le_bytes())?;
-        }
-        celldata_file.flush()?;
-
-        writeln!(
-            file,
-            "static {}_CELLS: [vb_rt::sys::vip::Cell; {}] = vb_graphics::include_celldata!(\"{}\");",
-            rust_identifier(&image.name),
-            cell_count,
-            celldata_filename,
-        )?;
+        generate_cells(&mut file, opts, &image.name, &image.cells)?;
         writeln!(file, "#[allow(dead_code)]")?;
         writeln!(
             file,
@@ -52,6 +38,38 @@ pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
         writeln!(file, "    height_cells: {},", image.height.div_ceil(8))?;
         writeln!(file, "    data: &{}_CELLS,", rust_identifier(&image.name))?;
         writeln!(file, "}};")?;
+        writeln!(file)?;
+    }
+
+    for animation in assets.animations {
+        for (index, frame) in animation.frames.iter().enumerate() {
+            generate_cells(
+                &mut file,
+                opts,
+                &format!("{}_{}", animation.name, index),
+                &frame.cells,
+            )?;
+        }
+        writeln!(file, "#[allow(dead_code)]")?;
+        writeln!(
+            file,
+            "pub const {}: [vb_graphics::Image; {}] = [",
+            rust_identifier(&animation.name),
+            animation.frames.len()
+        )?;
+        for (index, frame) in animation.frames.iter().enumerate() {
+            writeln!(file, "    vb_graphics::Image {{")?;
+            writeln!(file, "        width_cells: {},", frame.width.div_ceil(8))?;
+            writeln!(file, "        height_cells: {},", frame.height.div_ceil(8))?;
+            writeln!(
+                file,
+                "        data: &{}_{}_CELLS,",
+                rust_identifier(&animation.name),
+                index
+            )?;
+            writeln!(file, "    }},")?;
+        }
+        writeln!(file, "];")?;
         writeln!(file)?;
     }
 
@@ -136,6 +154,28 @@ pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
     }
 
     file.flush()?;
+    Ok(())
+}
+
+fn generate_cells<T>(file: &mut T, opts: &Options, name: &str, cells: &[u16]) -> Result<()>
+where
+    T: Write,
+{
+    let cell_count = cells.len();
+    let celldata_filename = format!("cells.{}.bin", name);
+    let mut celldata_file = opts.output_file(&celldata_filename)?;
+    for cell in cells {
+        celldata_file.write_all(&cell.to_le_bytes())?;
+    }
+    celldata_file.flush()?;
+
+    writeln!(
+        file,
+        "static {}_CELLS: [vb_rt::sys::vip::Cell; {}] = vb_graphics::include_celldata!(\"{}\");",
+        rust_identifier(name),
+        cell_count,
+        celldata_filename,
+    )?;
     Ok(())
 }
 

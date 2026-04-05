@@ -73,7 +73,10 @@ struct RawSpritesheet {
     sprite_size: (usize, usize),
     #[serde(default)]
     sprite_margin: (isize, isize),
-    sprite: BTreeMap<String, RawSprite>,
+    #[serde(rename = "sprite", default)]
+    sprites: BTreeMap<String, RawSprite>,
+    #[serde(rename = "animation", default)]
+    animations: BTreeMap<String, Vec<RawSprite>>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -93,9 +96,30 @@ struct RawSprite {
 
 #[derive(Debug)]
 pub struct RawAssets {
+    pub animations: BTreeMap<String, RawAnimation>,
     pub images: BTreeMap<String, RawImage>,
     pub masks: BTreeMap<String, RawMask>,
     pub fonts: BTreeMap<String, RawFont>,
+}
+
+#[derive(Debug)]
+pub struct RawAnimation {
+    pub chardata: String,
+    pub size: (usize, usize),
+    pub images: Vec<RawImage>,
+}
+impl RawAnimation {
+    fn fix(self, opts: &mut Options, dir: &Path, palette: Option<[u8; 3]>) -> Self {
+        Self {
+            chardata: self.chardata,
+            size: self.size,
+            images: self
+                .images
+                .into_iter()
+                .map(|i| i.fix(opts, dir, palette))
+                .collect(),
+        }
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -174,6 +198,7 @@ impl RawFont {
 
 pub fn parse(opts: &mut Options) -> Result<RawAssets> {
     let mut assets = RawAssets {
+        animations: BTreeMap::new(),
         images: BTreeMap::new(),
         masks: BTreeMap::new(),
         fonts: BTreeMap::new(),
@@ -196,8 +221,14 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
             let Some(dir) = path.parent() else {
                 bail!("invalid spritesheet file path {}", path.display());
             };
-            for (name, image) in parse_spritesheet(&path)? {
+            let parsed = parse_spritesheet(&path)?;
+            for (name, image) in parsed.images {
                 assets.images.insert(name, image.fix(opts, dir, palette));
+            }
+            for (name, animation) in parsed.animations {
+                assets
+                    .animations
+                    .insert(name, animation.fix(opts, dir, palette));
             }
         }
 
@@ -214,18 +245,24 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
     Ok(assets)
 }
 
-fn parse_spritesheet(path: &Path) -> Result<Vec<(String, RawImage)>> {
+struct ParsedSpritesheet {
+    images: Vec<(String, RawImage)>,
+    animations: Vec<(String, RawAnimation)>,
+}
+
+fn parse_spritesheet(path: &Path) -> Result<ParsedSpritesheet> {
     let file = std::fs::read_to_string(path)
         .with_context(|| format!("could not read config file {}", path.display()))?;
     let file: RawSpritesheet = toml::from_str(&file)?;
     let palette = file.palette;
 
     let mut sprites = vec![];
+    let mut animations = vec![];
     let spacing = (
         file.sprite_size.0 as isize + file.sprite_margin.0,
         file.sprite_size.1 as isize + file.sprite_margin.1,
     );
-    for (name, sprite) in file.sprite {
+    let sprite_to_image = |sprite: RawSprite| {
         let position = (
             file.offset.0 + spacing.0 * sprite.position.0,
             file.offset.1 + spacing.1 * sprite.position.1,
@@ -240,12 +277,30 @@ fn parse_spritesheet(path: &Path) -> Result<Vec<(String, RawImage)>> {
             position: Some(position),
             size: Some(file.sprite_size),
         };
-        let image = RawImage {
+        RawImage {
             chardata: file.chardata.clone(),
             palette,
             region,
-        };
-        sprites.push((name, image));
+        }
+    };
+    for (name, sprite) in file.sprites {
+        sprites.push((name, sprite_to_image(sprite)));
     }
-    Ok(sprites)
+    for (name, animation) in file.animations {
+        if animation.is_empty() {
+            bail!("animation {name} has no frames");
+        }
+        animations.push((
+            name,
+            RawAnimation {
+                chardata: file.chardata.clone(),
+                size: file.sprite_size,
+                images: animation.into_iter().map(sprite_to_image).collect(),
+            },
+        ));
+    }
+    Ok(ParsedSpritesheet {
+        images: sprites,
+        animations,
+    })
 }

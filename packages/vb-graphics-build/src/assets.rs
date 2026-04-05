@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     assets::{font::FontAtlas, png::PngContents},
-    config::{RawAssets, RawFont, RawImage, RawImageRegion, RawMask},
+    config::{RawAnimation, RawAssets, RawFont, RawImage, RawImageRegion, RawMask},
 };
 use anyhow::{Result, bail};
 use bitfield_struct::bitfield;
@@ -28,6 +28,7 @@ struct AssetProcessor {
     pngs: PngAtlas,
     fonts: FontAtlas,
     chardata: BTreeMap<String, CharData>,
+    animationdata: BTreeMap<String, AnimationData>,
     imagedata: BTreeMap<String, ImageData>,
     maskdata: BTreeMap<String, MaskData>,
     texturedata: BTreeMap<String, TextureData>,
@@ -40,6 +41,7 @@ impl AssetProcessor {
             pngs: PngAtlas::new(),
             fonts: FontAtlas::new(),
             chardata: BTreeMap::new(),
+            animationdata: BTreeMap::new(),
             imagedata: BTreeMap::new(),
             maskdata: BTreeMap::new(),
             texturedata: BTreeMap::new(),
@@ -51,6 +53,9 @@ impl AssetProcessor {
         for (name, image) in assets.images {
             self.process_image(name, image)?;
         }
+        for (name, animation) in assets.animations {
+            self.process_animation(name, animation)?;
+        }
         for (name, mask) in assets.masks {
             self.process_mask(name, mask)?;
         }
@@ -60,6 +65,7 @@ impl AssetProcessor {
         Ok(Assets {
             chardata: self.chardata.into_values().collect(),
             images: self.imagedata.into_values().collect(),
+            animations: self.animationdata.into_values().collect(),
             masks: self.maskdata.into_values().collect(),
             textures: self.texturedata.into_values().collect(),
             fonts: self.fontdata.into_values().collect(),
@@ -67,6 +73,30 @@ impl AssetProcessor {
     }
 
     fn process_image(&mut self, name: String, image: RawImage) -> Result<()> {
+        let frame = self.extract_image(image)?;
+        self.imagedata.insert(
+            name.clone(),
+            ImageData {
+                name,
+                width: frame.width,
+                height: frame.height,
+                cells: frame.cells,
+            },
+        );
+        Ok(())
+    }
+
+    fn process_animation(&mut self, name: String, animation: RawAnimation) -> Result<()> {
+        let mut frames = vec![];
+        for image in animation.images {
+            frames.push(self.extract_image(image)?);
+        }
+        self.animationdata
+            .insert(name.clone(), AnimationData { name, frames });
+        Ok(())
+    }
+
+    fn extract_image(&mut self, image: RawImage) -> Result<FrameData> {
         let png = self.pngs.open(image.region.file.to_path_buf())?;
         let ImageRegion {
             position,
@@ -107,16 +137,11 @@ impl AssetProcessor {
             }
         }
 
-        self.imagedata.insert(
-            name.to_string(),
-            ImageData {
-                name: name.to_string(),
-                width,
-                height,
-                cells,
-            },
-        );
-        Ok(())
+        Ok(FrameData {
+            width,
+            height,
+            cells,
+        })
     }
 
     fn process_mask(&mut self, name: String, mask: RawMask) -> Result<()> {
@@ -321,6 +346,7 @@ fn shades_to_chardata(shades: [[Shade; 8]; 8]) -> Result<([u16; 8], u8)> {
 pub struct Assets {
     pub chardata: Vec<CharData>,
     pub images: Vec<ImageData>,
+    pub animations: Vec<AnimationData>,
     pub masks: Vec<MaskData>,
     pub textures: Vec<TextureData>,
     pub fonts: Vec<FontData>,
@@ -344,6 +370,17 @@ impl CharData {
         self.chars.push(char);
         (index as u16, false, false)
     }
+}
+
+pub struct AnimationData {
+    pub name: String,
+    pub frames: Vec<FrameData>,
+}
+
+pub struct FrameData {
+    pub width: usize,
+    pub height: usize,
+    pub cells: Vec<u16>,
 }
 
 pub struct ImageData {
