@@ -123,7 +123,7 @@ pub struct BgSprite {
 
 impl BgSprite {
     pub fn load(self, image: Image, char_offset: u16) {
-        let dst = (self.x as u8 / 8, self.y as u8 / 8);
+        let dst = ((self.x / 8) as u8, (self.y / 8) as u8);
         image
             .render()
             .char_offset(char_offset)
@@ -157,7 +157,7 @@ impl BgAnimation {
     pub fn load<const N: usize>(self, images: [Image; N], char_offset: u16) {
         for (frame, image) in images.iter().enumerate() {
             let (x, y) = self.frame_pos(frame);
-            let dst = (x as u8 / 8, y as u8 / 8);
+            let dst = ((x / 8) as u8, (y / 8) as u8);
             image
                 .render()
                 .char_offset(char_offset)
