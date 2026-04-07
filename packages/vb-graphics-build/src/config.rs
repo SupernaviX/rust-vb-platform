@@ -60,6 +60,8 @@ struct RawAssetFile {
     pub masks: BTreeMap<String, RawMask>,
     #[serde(rename = "font", default)]
     pub fonts: BTreeMap<String, RawFont>,
+    #[serde(rename = "bgspritemap", default)]
+    pub bg_sprite_maps: BTreeMap<String, RawBgSpriteMap>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -94,10 +96,44 @@ struct RawSprite {
     position: (isize, isize),
 }
 
+#[derive(Deserialize, Debug)]
+pub struct RawBgSpriteMap {
+    pub bgmap_start: u8,
+    #[serde(default)]
+    spritesheets: Vec<PathBuf>,
+    #[serde(rename = "sprite", default)]
+    pub sprites: BTreeMap<String, RawBgSprite>,
+}
+impl RawBgSpriteMap {
+    fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
+        Self {
+            spritesheets: self
+                .spritesheets
+                .into_iter()
+                .map(|p| opts.input_path(&dir.join(&p)))
+                .collect(),
+            ..self
+        }
+    }
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(untagged)]
+pub enum RawBgSprite {
+    Image {
+        image: String,
+    },
+    Region {
+        size: (usize, usize),
+        frames: Option<usize>,
+    },
+}
+
 #[derive(Debug)]
 pub struct RawAssets {
     pub animations: BTreeMap<String, RawAnimation>,
     pub images: BTreeMap<String, RawImage>,
+    pub bg_sprite_maps: BTreeMap<String, RawBgSpriteMap>,
     pub masks: BTreeMap<String, RawMask>,
     pub fonts: BTreeMap<String, RawFont>,
 }
@@ -200,10 +236,12 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
     let mut assets = RawAssets {
         animations: BTreeMap::new(),
         images: BTreeMap::new(),
+        bg_sprite_maps: BTreeMap::new(),
         masks: BTreeMap::new(),
         fonts: BTreeMap::new(),
     };
     let mut files = vec![(opts.config_file_path(), None)];
+    let mut spritesheet_sprites = BTreeMap::new();
     while let Some((path, parent_palette)) = files.pop() {
         let file = std::fs::read_to_string(&path)
             .with_context(|| format!("could not read config file {}", path.display()))?;
@@ -222,14 +260,18 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
                 bail!("invalid spritesheet file path {}", path.display());
             };
             let parsed = parse_spritesheet(&path)?;
+            let mut sprites = vec![];
             for (name, image) in parsed.images {
+                sprites.push(name.clone());
                 assets.images.insert(name, image.fix(opts, dir, palette));
             }
             for (name, animation) in parsed.animations {
+                sprites.push(name.clone());
                 assets
                     .animations
                     .insert(name, animation.fix(opts, dir, palette));
             }
+            spritesheet_sprites.insert(path, sprites);
         }
 
         for (name, font) in file.fonts {
@@ -240,6 +282,30 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
         }
         for (name, mask) in file.masks {
             assets.masks.insert(name, mask.fix_files(opts, dir));
+        }
+        for (name, bg_sprite_map) in file.bg_sprite_maps {
+            assets
+                .bg_sprite_maps
+                .insert(name, bg_sprite_map.fix_files(opts, dir));
+        }
+    }
+    for (name, bg_sprite_map) in &mut assets.bg_sprite_maps {
+        for spritesheet in &bg_sprite_map.spritesheets {
+            let Some(sprites) = spritesheet_sprites.get(spritesheet) else {
+                bail!(
+                    "unrecognized spritesheet \"{}\" for bg sprite map \"{}\"",
+                    spritesheet.display(),
+                    name
+                );
+            };
+            for sprite in sprites {
+                bg_sprite_map.sprites.insert(
+                    sprite.clone(),
+                    RawBgSprite::Image {
+                        image: sprite.clone(),
+                    },
+                );
+            }
         }
     }
     Ok(assets)

@@ -1,0 +1,8 @@
+chardata = "all"
+file = "esma_still.png"
+sprite_size = [16, 16]
+
+sprite.still_down = { position = [0, 0] }
+sprite.still_up = { position = [1, 0] }
+sprite.still_right = { position = [2, 0] }
+sprite.still_left = { position = [2, 0], hflip = true }

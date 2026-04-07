@@ -1,6 +1,9 @@
 use std::io::Write;
 
-use crate::{Options, assets::Assets};
+use crate::{
+    Options,
+    assets::{Assets, BgSpriteKind},
+};
 use anyhow::Result;
 
 pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
@@ -70,6 +73,67 @@ pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
             writeln!(file, "    }},")?;
         }
         writeln!(file, "];")?;
+        writeln!(file)?;
+    }
+
+    for bg_sprite_map in assets.bg_sprite_maps {
+        writeln!(file, "pub mod {} {{", bg_sprite_map.name.replace("-", "_"))?;
+        for sprite in &bg_sprite_map.sprites {
+            let name = rust_identifier(&sprite.name);
+            match &sprite.kind {
+                BgSpriteKind::Image(data) => {
+                    writeln!(
+                        file,
+                        "    pub const {name}: vb_graphics::BgSprite = vb_graphics::BgSprite {{"
+                    )?;
+                    writeln!(file, "        bgmap: {},", sprite.bgmap)?;
+                    writeln!(file, "        x: {},", sprite.x)?;
+                    writeln!(file, "        y: {},", sprite.y)?;
+                    writeln!(file, "        width: {},", data.width)?;
+                    writeln!(file, "        height: {},", data.height)?;
+                    writeln!(file, "    }};")?;
+                }
+                BgSpriteKind::Animation(data) => {
+                    writeln!(
+                        file,
+                        "    pub const {name}: vb_graphics::BgAnimation = vb_graphics::BgAnimation {{"
+                    )?;
+                    writeln!(file, "        bgmap: {},", sprite.bgmap)?;
+                    writeln!(file, "        x: {},", sprite.x)?;
+                    writeln!(file, "        y: {},", sprite.y)?;
+                    writeln!(file, "        frame_width: {},", data.frame_width)?;
+                    writeln!(file, "        frame_height: {},", data.frame_height)?;
+                    writeln!(file, "        columns: {},", data.columns)?;
+                    writeln!(file, "        rows: {},", data.rows)?;
+                    writeln!(file, "    }};")?;
+                }
+            }
+        }
+        if !bg_sprite_map.chardatas.is_empty() {
+            writeln!(file)?;
+        }
+        for chardata in bg_sprite_map.chardatas {
+            writeln!(
+                file,
+                "    pub fn load_{}(char_offset: u16) {{",
+                chardata.replace("-", "_")
+            )?;
+            for sprite in &bg_sprite_map.sprites {
+                let Some(image) = &sprite.image else {
+                    continue;
+                };
+                if image.chardata == chardata {
+                    writeln!(
+                        file,
+                        "        {}.load(super::{}, char_offset);",
+                        rust_identifier(&sprite.name),
+                        rust_identifier(&image.name)
+                    )?;
+                }
+            }
+            writeln!(file, "    }}")?;
+        }
+        writeln!(file, "}}")?;
         writeln!(file)?;
     }
 

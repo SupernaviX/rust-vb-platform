@@ -1,0 +1,20 @@
+chardata = "all"
+file = "esma_walk.png"
+sprite_size = [16, 16]
+
+animation.walk_down = [
+    { position = [0, 0] },
+    { position = [1, 0] },
+]
+animation.walk_up = [
+    { position = [2, 0] },
+    { position = [3, 0] },
+]
+animation.walk_right = [
+    { position = [4, 0] },
+    { position = [5, 0] },
+]
+animation.walk_left = [
+    { position = [4, 0], hflip = true },
+    { position = [5, 0], hflip = true },
+]

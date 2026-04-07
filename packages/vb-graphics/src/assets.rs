@@ -1,5 +1,6 @@
 use vb_rt::sys::vip;
 
+#[derive(Clone, Copy)]
 pub struct Image {
     pub width_cells: u8,
     pub height_cells: u8,
@@ -108,6 +109,67 @@ impl ImageRenderer<'_> {
             }
         }
         used
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct BgSprite {
+    pub bgmap: u8,
+    pub x: i16,
+    pub y: i16,
+    pub width: i16,
+    pub height: i16,
+}
+
+impl BgSprite {
+    pub fn load(self, image: Image, char_offset: u16) {
+        let dst = (self.x as u8 / 8, self.y as u8 / 8);
+        image
+            .render()
+            .char_offset(char_offset)
+            .into_bgmap(self.bgmap, dst);
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct BgAnimation {
+    pub bgmap: u8,
+    pub x: i16,
+    pub y: i16,
+    pub frame_width: i16,
+    pub frame_height: i16,
+    pub columns: usize,
+    pub rows: usize,
+}
+
+impl BgAnimation {
+    pub const fn frame(self, frame: usize) -> BgSprite {
+        let (x, y) = self.frame_pos(frame);
+        BgSprite {
+            bgmap: self.bgmap,
+            x,
+            y,
+            width: self.frame_width,
+            height: self.frame_height,
+        }
+    }
+
+    pub fn load<const N: usize>(self, images: [Image; N], char_offset: u16) {
+        for (frame, image) in images.iter().enumerate() {
+            let (x, y) = self.frame_pos(frame);
+            let dst = (x as u8 / 8, y as u8 / 8);
+            image
+                .render()
+                .char_offset(char_offset)
+                .into_bgmap(self.bgmap, dst);
+        }
+    }
+
+    const fn frame_pos(self, frame: usize) -> (i16, i16) {
+        (
+            self.x + (self.frame_width * (frame % self.columns) as i16),
+            self.y + (self.frame_height * (frame / self.columns) as i16),
+        )
     }
 }
 

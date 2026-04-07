@@ -305,6 +305,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rpg"
+version = "0.1.0"
+dependencies = [
+ "fixed",
+ "vb-graphics",
+ "vb-graphics-build",
+ "vb-rt",
+ "vb-rt-build",
+ "vb-sound",
+ "vb-sound-build",
+]
+
+[[package]]
 name = "serde"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"

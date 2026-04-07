@@ -1,11 +1,14 @@
 mod font;
 mod png;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     assets::{font::FontAtlas, png::PngContents},
-    config::{RawAnimation, RawAssets, RawFont, RawImage, RawImageRegion, RawMask},
+    config::{
+        RawAnimation, RawAssets, RawBgSprite, RawBgSpriteMap, RawFont, RawImage, RawImageRegion,
+        RawMask,
+    },
 };
 use anyhow::{Result, bail};
 use bitfield_struct::bitfield;
@@ -30,6 +33,7 @@ struct AssetProcessor {
     chardata: BTreeMap<String, CharData>,
     animationdata: BTreeMap<String, AnimationData>,
     imagedata: BTreeMap<String, ImageData>,
+    bgspritemapdata: BTreeMap<String, BgSpriteMapData>,
     maskdata: BTreeMap<String, MaskData>,
     texturedata: BTreeMap<String, TextureData>,
     fontdata: BTreeMap<String, FontData>,
@@ -43,6 +47,7 @@ impl AssetProcessor {
             chardata: BTreeMap::new(),
             animationdata: BTreeMap::new(),
             imagedata: BTreeMap::new(),
+            bgspritemapdata: BTreeMap::new(),
             maskdata: BTreeMap::new(),
             texturedata: BTreeMap::new(),
             fontdata: BTreeMap::new(),
@@ -62,10 +67,14 @@ impl AssetProcessor {
         for (name, font) in assets.fonts {
             self.process_font(name, font)?;
         }
+        for (name, raw) in assets.bg_sprite_maps {
+            self.process_bg_sprite_map(name, raw)?;
+        }
         Ok(Assets {
             chardata: self.chardata.into_values().collect(),
             images: self.imagedata.into_values().collect(),
             animations: self.animationdata.into_values().collect(),
+            bg_sprite_maps: self.bgspritemapdata.into_values().collect(),
             masks: self.maskdata.into_values().collect(),
             textures: self.texturedata.into_values().collect(),
             fonts: self.fontdata.into_values().collect(),
@@ -73,6 +82,7 @@ impl AssetProcessor {
     }
 
     fn process_image(&mut self, name: String, image: RawImage) -> Result<()> {
+        let chardata = image.chardata.clone();
         let frame = self.extract_image(image)?;
         self.imagedata.insert(
             name.clone(),
@@ -81,6 +91,7 @@ impl AssetProcessor {
                 width: frame.width,
                 height: frame.height,
                 cells: frame.cells,
+                chardata,
             },
         );
         Ok(())
@@ -91,8 +102,14 @@ impl AssetProcessor {
         for image in animation.images {
             frames.push(self.extract_image(image)?);
         }
-        self.animationdata
-            .insert(name.clone(), AnimationData { name, frames });
+        self.animationdata.insert(
+            name.clone(),
+            AnimationData {
+                name,
+                chardata: animation.chardata,
+                frames,
+            },
+        );
         Ok(())
     }
 
@@ -142,6 +159,124 @@ impl AssetProcessor {
             height,
             cells,
         })
+    }
+
+    fn process_bg_sprite_map(&mut self, name: String, raw: RawBgSpriteMap) -> Result<()> {
+        let mut bgmap = raw.bgmap_start;
+        let mut x = 0;
+        let mut y = 0;
+        let mut row_height = 0;
+        let mut sprites = vec![];
+        let mut chardatas = BTreeSet::new();
+        for (name, sprite) in raw.sprites {
+            let (kind, image) = match sprite {
+                RawBgSprite::Region { size, frames: None } => (
+                    BgSpriteKind::Image(BgSpriteImageData {
+                        width: size.0,
+                        height: size.1,
+                    }),
+                    None,
+                ),
+                RawBgSprite::Region {
+                    size,
+                    frames: Some(frames),
+                } => {
+                    let (columns, rows) = animation_layout(size, frames);
+                    (
+                        BgSpriteKind::Animation(BgSpriteAnimationData {
+                            frame_width: size.0,
+                            frame_height: size.1,
+                            columns,
+                            rows,
+                        }),
+                        None,
+                    )
+                }
+                RawBgSprite::Image { image } => {
+                    if let Some(data) = self.imagedata.get(&image) {
+                        (
+                            BgSpriteKind::Image(BgSpriteImageData {
+                                width: data.width,
+                                height: data.height,
+                            }),
+                            Some(ImageRefData {
+                                name: image,
+                                chardata: data.chardata.clone(),
+                            }),
+                        )
+                    } else if let Some(data) = self.animationdata.get(&image) {
+                        let &FrameData {
+                            width: frame_width,
+                            height: frame_height,
+                            ..
+                        } = &data.frames[0];
+                        for frame in &data.frames {
+                            if frame.width != frame_width || frame.height != frame_height {
+                                bail!("all frames of animation \"{image}\" must be the same size");
+                            }
+                        }
+                        let (columns, rows) =
+                            animation_layout((frame_width, frame_height), data.frames.len());
+                        (
+                            BgSpriteKind::Animation(BgSpriteAnimationData {
+                                frame_width,
+                                frame_height,
+                                columns,
+                                rows,
+                            }),
+                            Some(ImageRefData {
+                                name: image,
+                                chardata: data.chardata.clone(),
+                            }),
+                        )
+                    } else {
+                        bail!("unrecognized image \"{image}\" in bgspritemap \"{name}\"");
+                    }
+                }
+            };
+            if let Some(image) = &image {
+                chardatas.insert(image.chardata.clone());
+            }
+            let (width, height) = match &kind {
+                BgSpriteKind::Image(data) => (data.width, data.height),
+                BgSpriteKind::Animation(data) => (
+                    data.frame_width * data.columns,
+                    data.frame_height * data.rows,
+                ),
+            };
+            if x + width > 512 {
+                x = 0;
+                y += row_height;
+                row_height = height;
+            } else {
+                row_height = row_height.max(height);
+            }
+            if y + row_height > 512 {
+                bgmap += 1;
+                x = 0;
+                y = 0;
+                row_height = height;
+            }
+            sprites.push(BgSpriteData {
+                name,
+                bgmap,
+                x,
+                y,
+                kind,
+                image,
+            });
+            x += width;
+        }
+
+        self.bgspritemapdata.insert(
+            name.clone(),
+            BgSpriteMapData {
+                name,
+                sprites,
+                chardatas: chardatas.into_iter().collect(),
+            },
+        );
+        Ok(())
     }
 
     fn process_mask(&mut self, name: String, mask: RawMask) -> Result<()> {
@@ -347,6 +482,7 @@ pub struct Assets {
     pub chardata: Vec<CharData>,
     pub images: Vec<ImageData>,
     pub animations: Vec<AnimationData>,
+    pub bg_sprite_maps: Vec<BgSpriteMapData>,
     pub masks: Vec<MaskData>,
     pub textures: Vec<TextureData>,
     pub fonts: Vec<FontData>,
@@ -374,6 +510,7 @@ impl CharData {
 
 pub struct AnimationData {
     pub name: String,
+    chardata: String,
     pub frames: Vec<FrameData>,
 }
 
@@ -388,6 +525,50 @@ pub struct ImageData {
     pub width: usize,
     pub height: usize,
     pub cells: Vec<u16>,
+    chardata: String,
+}
+
+#[derive(Debug)]
+pub struct BgSpriteMapData {
+    pub name: String,
+    pub sprites: Vec<BgSpriteData>,
+    pub chardatas: Vec<String>,
+}
+
+#[derive(Debug)]
+pub struct BgSpriteData {
+    pub name: String,
+    pub bgmap: u8,
+    pub x: usize,
+    pub y: usize,
+    pub kind: BgSpriteKind,
+    pub image: Option<ImageRefData>,
+}
+
+#[derive(Debug)]
+pub enum BgSpriteKind {
+    Image(BgSpriteImageData),
+    Animation(BgSpriteAnimationData),
+}
+
+#[derive(Debug)]
+pub struct BgSpriteImageData {
+    pub width: usize,
+    pub height: usize,
+}
+
+#[derive(Debug)]
+pub struct BgSpriteAnimationData {
+    pub frame_width: usize,
+    pub frame_height: usize,
+    pub columns: usize,
+    pub rows: usize,
+}
+
+#[derive(Debug)]
+pub struct ImageRefData {
+    pub name: String,
+    pub chardata: String,
 }
 
 pub struct MaskData {
@@ -460,4 +641,28 @@ struct Cell {
     pub hflip: bool,
     #[bits(2)]
     pub palette: u8,
+}
+
+// minimize area, but then go for "square" shapes (where width is close to height)
+fn animation_layout(frame_size: (usize, usize), frames: usize) -> (usize, usize) {
+    let mut result = (frames, 1);
+    let mut area = frames * frame_size.0 * frame_size.1;
+    let mut squareness = (frames * frame_size.0).abs_diff(frame_size.1);
+    for columns in (1..frames).rev() {
+        let rows = frames.div_ceil(columns);
+        let width = columns * frame_size.0;
+        let height = rows * frame_size.1;
+        let new_area = width * height;
+        let new_squareness = width.abs_diff(height);
+        if new_area
+            .cmp(&area)
+            .then(new_squareness.cmp(&squareness))
+            .is_lt()
+        {
+            result = (columns, rows);
+            area = new_area;
+            squareness = new_squareness;
+        }
+    }
+    result
 }

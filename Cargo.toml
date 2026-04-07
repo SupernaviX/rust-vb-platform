@@ -10,6 +10,7 @@ members = [
     "packages/vb-sound-build",
     "examples/display-text",
     "examples/hello-world",
+    "examples/rpg",
     "examples/spooky-music",
 ]
 resolver = "3"

@@ -1,0 +1,11 @@
+spritesheets = [
+    "assets/esma_still.toml",
+    "assets/esma_walk.toml",
+]
+
+[bgspritemap.all]
+bgmap_start = 0
+spritesheets = [
+    "assets/esma_still.toml",
+    "assets/esma_walk.toml",
+]
