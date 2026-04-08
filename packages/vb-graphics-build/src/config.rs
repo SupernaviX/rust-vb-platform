@@ -98,6 +98,8 @@ struct RawSprite {
 
 #[derive(Deserialize, Debug)]
 pub struct RawBgSpriteMap {
+    pub base: Option<String>,
+    #[serde(default)]
     pub bgmap_start: u8,
     #[serde(default)]
     spritesheets: Vec<PathBuf>,

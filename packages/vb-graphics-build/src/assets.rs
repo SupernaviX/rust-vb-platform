@@ -1,7 +1,7 @@
 mod font;
 mod png;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::{
     assets::{font::FontAtlas, png::PngContents},
@@ -54,7 +54,7 @@ impl AssetProcessor {
         }
     }
 
-    pub fn process(mut self, assets: RawAssets) -> Result<Assets> {
+    pub fn process(mut self, mut assets: RawAssets) -> Result<Assets> {
         for (name, image) in assets.images {
             self.process_image(name, image)?;
         }
@@ -67,7 +67,18 @@ impl AssetProcessor {
         for (name, font) in assets.fonts {
             self.process_font(name, font)?;
         }
-        for (name, raw) in assets.bg_sprite_maps {
+        let mut sprite_map_queue = VecDeque::new();
+        while let Some((name, sprite_map)) = assets.bg_sprite_maps.pop_first() {
+            let mut current_base = sprite_map.base.clone();
+            while let Some(base) = current_base.take() {
+                if let Some(base_map) = assets.bg_sprite_maps.remove(&base) {
+                    current_base = base_map.base.clone();
+                    sprite_map_queue.push_front((base, base_map));
+                }
+            }
+            sprite_map_queue.push_back((name, sprite_map));
+        }
+        for (name, raw) in sprite_map_queue {
             self.process_bg_sprite_map(name, raw)?;
         }
         Ok(Assets {
@@ -162,10 +173,19 @@ impl AssetProcessor {
     }
 
     fn process_bg_sprite_map(&mut self, name: String, raw: RawBgSpriteMap) -> Result<()> {
-        let mut bgmap = raw.bgmap_start;
-        let mut x = 0;
-        let mut y = 0;
-        let mut row_height = 0;
+        let (mut bgmap, mut x, mut y, mut row_height) = if let Some(base_name) = raw.base {
+            let Some(base) = self.bgspritemapdata.get(&base_name) else {
+                bail!("sprite map \"{name}\" has nonexistent base \"{base_name}\"");
+            };
+            (
+                base.next_bgmap,
+                base.next_x,
+                base.next_y,
+                base.next_row_height,
+            )
+        } else {
+            (raw.bgmap_start, 0, 0, 0)
+        };
         let mut sprites = vec![];
         let mut chardatas = BTreeSet::new();
         for (name, sprite) in raw.sprites {
@@ -274,6 +294,10 @@ impl AssetProcessor {
                 name,
                 sprites,
                 chardatas: chardatas.into_iter().collect(),
+                next_bgmap: bgmap,
+                next_x: x,
+                next_y: y,
+                next_row_height: row_height,
             },
         );
         Ok(())
@@ -533,6 +557,10 @@ pub struct BgSpriteMapData {
     pub name: String,
     pub sprites: Vec<BgSpriteData>,
     pub chardatas: Vec<String>,
+    next_bgmap: u8,
+    next_x: usize,
+    next_y: usize,
+    next_row_height: usize,
 }
 
 #[derive(Debug)]
