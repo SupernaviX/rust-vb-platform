@@ -129,6 +129,15 @@ impl BgSprite {
             .char_offset(char_offset)
             .into_bgmap(self.bgmap, dst);
     }
+    pub const fn region(self, position: (i16, i16), size: (i16, i16)) -> Self {
+        Self {
+            bgmap: self.bgmap,
+            x: self.x + position.0,
+            y: self.y + position.1,
+            width: size.0,
+            height: size.1,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
