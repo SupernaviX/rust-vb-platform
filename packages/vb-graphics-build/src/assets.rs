@@ -1,7 +1,7 @@
 mod font;
 mod png;
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     assets::{font::FontAtlas, png::PngContents},
@@ -67,19 +67,19 @@ impl AssetProcessor {
         for (name, font) in assets.fonts {
             self.process_font(name, font)?;
         }
-        let mut sprite_map_queue = VecDeque::new();
         while let Some((name, sprite_map)) = assets.bg_sprite_maps.pop_first() {
             let mut current_base = sprite_map.base.clone();
+            let mut sprite_map_queue = vec![];
             while let Some(base) = current_base.take() {
                 if let Some(base_map) = assets.bg_sprite_maps.remove(&base) {
                     current_base = base_map.base.clone();
-                    sprite_map_queue.push_front((base, base_map));
+                    sprite_map_queue.push((base, base_map));
                 }
             }
-            sprite_map_queue.push_back((name, sprite_map));
-        }
-        for (name, raw) in sprite_map_queue {
-            self.process_bg_sprite_map(name, raw)?;
+            for (name, sprite_map) in sprite_map_queue.into_iter().rev() {
+                self.process_bg_sprite_map(name, sprite_map)?;
+            }
+            self.process_bg_sprite_map(name, sprite_map)?;
         }
         Ok(Assets {
             chardata: self.chardata.into_values().collect(),
