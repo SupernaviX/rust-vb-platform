@@ -47,6 +47,28 @@ impl Options {
 }
 
 #[derive(Deserialize, Debug)]
+struct RawAnimationSerde {
+    chardata: String,
+    frames: Vec<RawImageRegion>,
+}
+impl From<RawAnimationSerde> for RawAnimation {
+    fn from(value: RawAnimationSerde) -> Self {
+        Self {
+            chardata: value.chardata.clone(),
+            images: value
+                .frames
+                .into_iter()
+                .map(|f| RawImage {
+                    chardata: value.chardata.clone(),
+                    palette: None,
+                    region: f,
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Deserialize, Debug)]
 struct RawAssetFile {
     #[serde(default)]
     pub imports: Vec<PathBuf>,
@@ -56,6 +78,8 @@ struct RawAssetFile {
     pub palette: Option<[u8; 3]>,
     #[serde(rename = "image", default)]
     pub images: BTreeMap<String, RawImage>,
+    #[serde(rename = "animation", default)]
+    pub animations: BTreeMap<String, RawAnimationSerde>,
     #[serde(rename = "mask", default)]
     pub masks: BTreeMap<String, RawMask>,
     #[serde(rename = "font", default)]
@@ -143,14 +167,12 @@ pub struct RawAssets {
 #[derive(Debug)]
 pub struct RawAnimation {
     pub chardata: String,
-    pub size: (usize, usize),
     pub images: Vec<RawImage>,
 }
 impl RawAnimation {
     fn fix(self, opts: &mut Options, dir: &Path, palette: Option<[u8; 3]>) -> Self {
         Self {
             chardata: self.chardata,
-            size: self.size,
             images: self
                 .images
                 .into_iter()
@@ -282,6 +304,12 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
         for (name, image) in file.images {
             assets.images.insert(name, image.fix(opts, dir, palette));
         }
+        for (name, animation) in file.animations {
+            let animation: RawAnimation = animation.into();
+            assets
+                .animations
+                .insert(name, animation.fix(opts, dir, palette));
+        }
         for (name, mask) in file.masks {
             assets.masks.insert(name, mask.fix_files(opts, dir));
         }
@@ -362,7 +390,6 @@ fn parse_spritesheet(path: &Path) -> Result<ParsedSpritesheet> {
             name,
             RawAnimation {
                 chardata: file.chardata.clone(),
-                size: file.sprite_size,
                 images: animation.into_iter().map(sprite_to_image).collect(),
             },
         ));
