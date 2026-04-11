@@ -7,7 +7,7 @@ pub struct InputRegion {
     pub height: usize,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct OutputRegion {
     pub bgmap: u8,
     pub x: usize,

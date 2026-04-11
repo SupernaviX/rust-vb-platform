@@ -93,6 +93,17 @@ pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
                     writeln!(file, "        height: {},", data.height)?;
                     writeln!(file, "    }};")?;
                 }
+                BgSpriteKind::Region(data) => {
+                    writeln!(
+                        file,
+                        "    pub const {name}: vb_graphics::BgSprite = {}.region(({}, {}), ({}, {}));",
+                        rust_identifier(&data.parent),
+                        data.x,
+                        data.y,
+                        data.width,
+                        data.height
+                    )?;
+                }
                 BgSpriteKind::Animation(data) => {
                     writeln!(
                         file,

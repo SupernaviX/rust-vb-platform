@@ -213,6 +213,20 @@ impl AssetProcessor {
                         None,
                     )
                 }
+                RawBgSprite::Subregion {
+                    parent,
+                    position,
+                    size,
+                } => (
+                    BgSpriteKind::Region(BgSpriteRegionData {
+                        parent,
+                        x: position.0,
+                        y: position.1,
+                        width: size.0,
+                        height: size.1,
+                    }),
+                    None,
+                ),
                 RawBgSprite::Image { image } => {
                     if let Some(data) = self.imagedata.get(&image) {
                         (
@@ -258,25 +272,34 @@ impl AssetProcessor {
             if let Some(image) = &image {
                 chardatas.insert(image.chardata.clone());
             }
-            let (width, height) = match &kind {
-                BgSpriteKind::Image(data) => (data.width, data.height),
-                BgSpriteKind::Animation(data) => (
-                    data.frame_width * data.columns,
-                    data.frame_height * data.rows,
-                ),
-            };
-            processed_sprites.push((name.clone(), kind, image));
-            unplaced_regions.push(InputRegion {
-                name,
-                width,
-                height,
-            });
+            match &kind {
+                BgSpriteKind::Image(data) => {
+                    unplaced_regions.push(InputRegion {
+                        name: name.clone(),
+                        width: data.width,
+                        height: data.height,
+                    });
+                }
+                BgSpriteKind::Region(_) => {}
+                BgSpriteKind::Animation(data) => unplaced_regions.push(InputRegion {
+                    name: name.clone(),
+                    width: data.frame_width * data.columns,
+                    height: data.frame_height * data.rows,
+                }),
+            }
+            processed_sprites.push((name, kind, image));
         }
 
         let mut sprites = vec![];
         let regions = packer.pack(unplaced_regions);
         for (name, kind, image) in processed_sprites {
-            let region = regions.get(&name).unwrap();
+            let region = regions.get(&name).copied().unwrap_or_else(|| {
+                if matches!(kind, BgSpriteKind::Region(_)) {
+                    Default::default()
+                } else {
+                    panic!("no size found for {name}");
+                }
+            });
             sprites.push(BgSpriteData {
                 name,
                 bgmap: region.bgmap,
@@ -555,7 +578,6 @@ pub struct BgSpriteMapData {
     packer: Packer,
 }
 
-#[derive(Debug)]
 pub struct BgSpriteData {
     pub name: String,
     pub bgmap: u8,
@@ -565,19 +587,25 @@ pub struct BgSpriteData {
     pub image: Option<ImageRefData>,
 }
 
-#[derive(Debug)]
 pub enum BgSpriteKind {
     Image(BgSpriteImageData),
+    Region(BgSpriteRegionData),
     Animation(BgSpriteAnimationData),
 }
 
-#[derive(Debug)]
 pub struct BgSpriteImageData {
     pub width: usize,
     pub height: usize,
 }
 
-#[derive(Debug)]
+pub struct BgSpriteRegionData {
+    pub parent: String,
+    pub x: usize,
+    pub y: usize,
+    pub width: usize,
+    pub height: usize,
+}
+
 pub struct BgSpriteAnimationData {
     pub frame_width: usize,
     pub frame_height: usize,

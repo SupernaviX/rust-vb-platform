@@ -149,6 +149,11 @@ pub enum RawBgSprite {
     Image {
         image: String,
     },
+    Subregion {
+        parent: String,
+        position: (usize, usize),
+        size: (usize, usize),
+    },
     Region {
         size: (usize, usize),
         frames: Option<usize>,
