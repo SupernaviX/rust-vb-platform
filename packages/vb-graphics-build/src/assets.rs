@@ -1,10 +1,15 @@
 mod font;
+mod packer;
 mod png;
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    assets::{font::FontAtlas, png::PngContents},
+    assets::{
+        font::FontAtlas,
+        packer::{InputRegion, Packer},
+        png::PngContents,
+    },
     config::{
         RawAnimation, RawAssets, RawBgSprite, RawBgSpriteMap, RawFont, RawImage, RawImageRegion,
         RawMask,
@@ -173,21 +178,17 @@ impl AssetProcessor {
     }
 
     fn process_bg_sprite_map(&mut self, name: String, raw: RawBgSpriteMap) -> Result<()> {
-        let (mut bgmap, mut x, mut y, mut row_height) = if let Some(base_name) = raw.base {
+        let mut packer = if let Some(base_name) = raw.base {
             let Some(base) = self.bgspritemapdata.get(&base_name) else {
                 bail!("sprite map \"{name}\" has nonexistent base \"{base_name}\"");
             };
-            (
-                base.next_bgmap,
-                base.next_x,
-                base.next_y,
-                base.next_row_height,
-            )
+            base.packer.clone()
         } else {
-            (raw.bgmap_start, 0, 0, 0)
+            Packer::new(raw.bgmap_start)
         };
-        let mut sprites = vec![];
         let mut chardatas = BTreeSet::new();
+        let mut processed_sprites = vec![];
+        let mut unplaced_regions = vec![];
         for (name, sprite) in raw.sprites {
             let (kind, image) = match sprite {
                 RawBgSprite::Region { size, frames: None } => (
@@ -264,28 +265,26 @@ impl AssetProcessor {
                     data.frame_height * data.rows,
                 ),
             };
-            if x + width > 512 {
-                x = 0;
-                y += row_height;
-                row_height = height;
-            } else {
-                row_height = row_height.max(height);
-            }
-            if y + row_height > 512 {
-                bgmap += 1;
-                x = 0;
-                y = 0;
-                row_height = height;
-            }
+            processed_sprites.push((name.clone(), kind, image));
+            unplaced_regions.push(InputRegion {
+                name,
+                width,
+                height,
+            });
+        }
+
+        let mut sprites = vec![];
+        let regions = packer.pack(unplaced_regions);
+        for (name, kind, image) in processed_sprites {
+            let region = regions.get(&name).unwrap();
             sprites.push(BgSpriteData {
                 name,
-                bgmap,
-                x,
-                y,
+                bgmap: region.bgmap,
+                x: region.x,
+                y: region.y,
                 kind,
                 image,
             });
-            x += width;
         }
 
         self.bgspritemapdata.insert(
@@ -294,10 +293,7 @@ impl AssetProcessor {
                 name,
                 sprites,
                 chardatas: chardatas.into_iter().collect(),
-                next_bgmap: bgmap,
-                next_x: x,
-                next_y: y,
-                next_row_height: row_height,
+                packer,
             },
         );
         Ok(())
@@ -552,15 +548,11 @@ pub struct ImageData {
     chardata: String,
 }
 
-#[derive(Debug)]
 pub struct BgSpriteMapData {
     pub name: String,
     pub sprites: Vec<BgSpriteData>,
     pub chardatas: Vec<String>,
-    next_bgmap: u8,
-    next_x: usize,
-    next_y: usize,
-    next_row_height: usize,
+    packer: Packer,
 }
 
 #[derive(Debug)]
