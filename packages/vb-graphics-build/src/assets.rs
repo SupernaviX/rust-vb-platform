@@ -220,19 +220,25 @@ impl AssetProcessor {
         let mut processed_sprites = vec![];
         let mut unplaced_regions = vec![];
         for (name, sprite) in raw.sprites {
-            let (kind, image) = match sprite {
-                RawBgSprite::Region { size, frames: None } => (
+            let (kind, image, stereo) = match sprite {
+                RawBgSprite::Region {
+                    size,
+                    frames: None,
+                    stereo,
+                } => (
                     BgSpriteKind::Image(BgSpriteImageData {
                         width: size.0,
                         height: size.1,
                     }),
                     None,
+                    stereo,
                 ),
                 RawBgSprite::Region {
                     size,
                     frames: Some(frames),
+                    stereo,
                 } => {
-                    let (columns, rows) = animation_layout(size, frames);
+                    let (columns, rows) = animation_layout(size, frames, stereo);
                     (
                         BgSpriteKind::Animation(BgSpriteAnimationData {
                             frame_width: size.0,
@@ -241,6 +247,7 @@ impl AssetProcessor {
                             rows,
                         }),
                         None,
+                        stereo,
                     )
                 }
                 RawBgSprite::Subregion {
@@ -256,9 +263,11 @@ impl AssetProcessor {
                         height: size.1,
                     }),
                     None,
+                    false,
                 ),
                 RawBgSprite::Image { image } => {
                     if let Some(data) = self.imagedata.get(&image) {
+                        let stereo = matches!(data.frame, FrameData::Stereo { .. });
                         (
                             BgSpriteKind::Image(BgSpriteImageData {
                                 width: data.width,
@@ -268,12 +277,17 @@ impl AssetProcessor {
                                 name: image,
                                 chardata: data.chardata.clone(),
                             }),
+                            stereo,
                         )
                     } else if let Some(data) = self.animationdata.get(&image) {
+                        let stereo = matches!(data.frames[0], FrameData::Stereo { .. });
                         let frame_width = data.width;
                         let frame_height = data.height;
-                        let (columns, rows) =
-                            animation_layout((frame_width, frame_height), data.frames.len());
+                        let (columns, rows) = animation_layout(
+                            (frame_width, frame_height),
+                            data.frames.len(),
+                            stereo,
+                        );
                         (
                             BgSpriteKind::Animation(BgSpriteAnimationData {
                                 frame_width,
@@ -285,6 +299,7 @@ impl AssetProcessor {
                                 name: image,
                                 chardata: data.chardata.clone(),
                             }),
+                            stereo,
                         )
                     } else {
                         bail!("unrecognized image \"{image}\" in bgspritemap \"{name}\"");
@@ -298,23 +313,23 @@ impl AssetProcessor {
                 BgSpriteKind::Image(data) => {
                     unplaced_regions.push(InputRegion {
                         name: name.clone(),
-                        width: data.width,
+                        width: data.width * if stereo { 2 } else { 1 },
                         height: data.height,
                     });
                 }
                 BgSpriteKind::Region(_) => {}
                 BgSpriteKind::Animation(data) => unplaced_regions.push(InputRegion {
                     name: name.clone(),
-                    width: data.frame_width * data.columns,
+                    width: data.frame_width * data.columns * if stereo { 2 } else { 1 },
                     height: data.frame_height * data.rows,
                 }),
             }
-            processed_sprites.push((name, kind, image));
+            processed_sprites.push((name, kind, image, stereo));
         }
 
         let mut sprites = vec![];
         let regions = packer.pack(unplaced_regions);
-        for (name, kind, image) in processed_sprites {
+        for (name, kind, image, stereo) in processed_sprites {
             let region = regions.get(&name).copied().unwrap_or_else(|| {
                 if matches!(kind, BgSpriteKind::Region(_)) {
                     Default::default()
@@ -327,6 +342,7 @@ impl AssetProcessor {
                 bgmap: region.bgmap,
                 x: region.x,
                 y: region.y,
+                stereo,
                 kind,
                 image,
             });
@@ -614,6 +630,7 @@ pub struct BgSpriteData {
     pub bgmap: u8,
     pub x: usize,
     pub y: usize,
+    pub stereo: bool,
     pub kind: BgSpriteKind,
     pub image: Option<ImageRefData>,
 }
@@ -723,14 +740,16 @@ struct Cell {
 }
 
 // minimize area, but then go for "square" shapes (where width is close to height)
-fn animation_layout(frame_size: (usize, usize), frames: usize) -> (usize, usize) {
+fn animation_layout(frame_size: (usize, usize), frames: usize, stereo: bool) -> (usize, usize) {
+    let frame_width = frame_size.0 * if stereo { 2 } else { 1 };
+    let frame_height = frame_size.1;
     let mut result = (frames, 1);
-    let mut area = frames * frame_size.0 * frame_size.1;
-    let mut squareness = (frames * frame_size.0).abs_diff(frame_size.1);
+    let mut area = frames * frame_width * frame_height;
+    let mut squareness = (frames * frame_width).abs_diff(frame_height);
     for columns in (1..frames).rev() {
         let rows = frames.div_ceil(columns);
-        let width = columns * frame_size.0;
-        let height = rows * frame_size.1;
+        let width = columns * frame_width;
+        let height = rows * frame_height;
         let new_area = width * height;
         let new_squareness = width.abs_diff(height);
         if new_area

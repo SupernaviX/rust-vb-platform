@@ -143,6 +143,7 @@ pub struct BgSprite {
     pub bgmap: u8,
     pub x: i16,
     pub y: i16,
+    pub stereo: bool,
     pub width: i16,
     pub height: i16,
 }
@@ -155,11 +156,43 @@ impl BgSprite {
             .char_offset(char_offset)
             .into_bgmap(self.bgmap, dst);
     }
+
+    pub fn left(self) -> BgSprite {
+        Self {
+            stereo: false,
+            ..self
+        }
+    }
+
+    pub fn right(self) -> BgSprite {
+        Self {
+            x: self.x + self.width,
+            stereo: false,
+            ..self
+        }
+    }
+
+    pub fn load_stereo(self, image: StereoImage, char_offset: u16) {
+        let dst_left = ((self.x / 8) as u8, (self.y / 8) as u8);
+        let dst_right = (((self.x + self.width) / 8) as u8, (self.y / 8) as u8);
+        image
+            .left_image()
+            .render()
+            .char_offset(char_offset)
+            .into_bgmap(self.bgmap, dst_left);
+        image
+            .right_image()
+            .render()
+            .char_offset(char_offset)
+            .into_bgmap(self.bgmap, dst_right);
+    }
+
     pub const fn region(self, position: (i16, i16), size: (i16, i16)) -> Self {
         Self {
             bgmap: self.bgmap,
             x: self.x + position.0,
             y: self.y + position.1,
+            stereo: false,
             width: size.0,
             height: size.1,
         }
@@ -171,6 +204,7 @@ pub struct BgAnimation {
     pub bgmap: u8,
     pub x: i16,
     pub y: i16,
+    pub stereo: bool,
     pub frame_width: i16,
     pub frame_height: i16,
     pub columns: usize,
@@ -184,6 +218,7 @@ impl BgAnimation {
             bgmap: self.bgmap,
             x,
             y,
+            stereo: self.stereo,
             width: self.frame_width,
             height: self.frame_height,
         }
@@ -200,9 +235,30 @@ impl BgAnimation {
         }
     }
 
+    pub fn load_stereo<const N: usize>(self, images: [StereoImage; N], char_offset: u16) {
+        for (frame, image) in images.iter().enumerate() {
+            let (x, y) = self.frame_pos(frame);
+            let dst_left = ((x / 8) as u8, (y / 8) as u8);
+            let dst_right = (((x + self.frame_width) / 8) as u8, (y / 8) as u8);
+            image
+                .left_image()
+                .render()
+                .char_offset(char_offset)
+                .into_bgmap(self.bgmap, dst_left);
+            image
+                .right_image()
+                .render()
+                .char_offset(char_offset)
+                .into_bgmap(self.bgmap, dst_right);
+        }
+    }
+
     const fn frame_pos(self, frame: usize) -> (i16, i16) {
         (
-            self.x + (self.frame_width * (frame % self.columns) as i16),
+            self.x
+                + (self.frame_width
+                    * if self.stereo { 2 } else { 1 }
+                    * (frame % self.columns) as i16),
             self.y + (self.frame_height * (frame / self.columns) as i16),
         )
     }

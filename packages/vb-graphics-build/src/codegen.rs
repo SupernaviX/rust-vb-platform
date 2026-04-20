@@ -129,6 +129,7 @@ pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
                     writeln!(file, "        bgmap: {},", sprite.bgmap)?;
                     writeln!(file, "        x: {},", sprite.x)?;
                     writeln!(file, "        y: {},", sprite.y)?;
+                    writeln!(file, "        stereo: {},", sprite.stereo)?;
                     writeln!(file, "        width: {},", data.width)?;
                     writeln!(file, "        height: {},", data.height)?;
                     writeln!(file, "    }};")?;
@@ -152,6 +153,7 @@ pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
                     writeln!(file, "        bgmap: {},", sprite.bgmap)?;
                     writeln!(file, "        x: {},", sprite.x)?;
                     writeln!(file, "        y: {},", sprite.y)?;
+                    writeln!(file, "        stereo: {},", sprite.stereo)?;
                     writeln!(file, "        frame_width: {},", data.frame_width)?;
                     writeln!(file, "        frame_height: {},", data.frame_height)?;
                     writeln!(file, "        columns: {},", data.columns)?;

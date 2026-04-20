@@ -157,6 +157,8 @@ pub enum RawBgSprite {
     Region {
         size: (usize, usize),
         frames: Option<usize>,
+        #[serde(default)]
+        stereo: bool,
     },
 }
 
