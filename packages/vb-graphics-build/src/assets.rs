@@ -276,6 +276,7 @@ impl AssetProcessor {
                             Some(ImageRefData {
                                 name: image,
                                 chardata: data.chardata.clone(),
+                                stereo,
                             }),
                             stereo,
                         )
@@ -298,6 +299,7 @@ impl AssetProcessor {
                             Some(ImageRefData {
                                 name: image,
                                 chardata: data.chardata.clone(),
+                                stereo,
                             }),
                             stereo,
                         )
@@ -665,6 +667,7 @@ pub struct BgSpriteAnimationData {
 pub struct ImageRefData {
     pub name: String,
     pub chardata: String,
+    pub stereo: bool,
 }
 
 pub struct MaskData {

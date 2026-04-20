@@ -175,10 +175,11 @@ pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
                 let Some(image) = &sprite.image else {
                     continue;
                 };
+                let load_method = if image.stereo { "load_stereo" } else { "load" };
                 if image.chardata == chardata {
                     writeln!(
                         file,
-                        "        {}.load(super::{}, char_offset);",
+                        "        {}.{load_method}(super::{}, char_offset);",
                         rust_identifier(&sprite.name),
                         rust_identifier(&image.name)
                     )?;
