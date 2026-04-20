@@ -1,6 +1,6 @@
 use vb_rt::sys::vip;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Image {
     pub width_cells: u8,
     pub height_cells: u8,
@@ -36,7 +36,7 @@ impl Image {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct StereoImage {
     pub width_cells: u8,
     pub height_cells: u8,
@@ -138,7 +138,7 @@ impl ImageRenderer<'_> {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BgSprite {
     pub bgmap: u8,
     pub x: i16,
@@ -199,7 +199,7 @@ impl BgSprite {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BgAnimation {
     pub bgmap: u8,
     pub x: i16,
