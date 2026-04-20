@@ -36,6 +36,32 @@ impl Image {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct StereoImage {
+    pub width_cells: u8,
+    pub height_cells: u8,
+    pub left: &'static [vip::Cell],
+    pub right: &'static [vip::Cell],
+}
+
+impl StereoImage {
+    pub fn left_image(self) -> Image {
+        Image {
+            width_cells: self.width_cells,
+            height_cells: self.height_cells,
+            data: self.left,
+        }
+    }
+
+    pub fn right_image(self) -> Image {
+        Image {
+            width_cells: self.width_cells,
+            height_cells: self.height_cells,
+            data: self.right,
+        }
+    }
+}
+
 pub struct ImageRenderer<'a> {
     image: &'a Image,
     src: (u8, u8),

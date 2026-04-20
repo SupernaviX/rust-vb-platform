@@ -2,7 +2,7 @@ use std::io::Write;
 
 use crate::{
     Options,
-    assets::{Assets, BgSpriteKind},
+    assets::{Assets, BgSpriteKind, FrameData},
 };
 use anyhow::Result;
 
@@ -30,46 +30,86 @@ pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
     }
 
     for image in assets.images {
-        generate_cells(&mut file, opts, &image.name, &image.cells)?;
+        generate_frame_cells(&mut file, opts, &image.name, &image.frame)?;
         writeln!(file, "#[allow(dead_code)]")?;
+        let (struct_name, stereo) = match &image.frame {
+            FrameData::Mono(_) => ("vb_graphics::Image", false),
+            FrameData::Stereo { .. } => ("vb_graphics::StereoImage", true),
+        };
         writeln!(
             file,
-            "pub const {}: vb_graphics::Image = vb_graphics::Image {{",
+            "pub const {}: {struct_name} = {struct_name} {{",
             rust_identifier(&image.name)
         )?;
         writeln!(file, "    width_cells: {},", image.width.div_ceil(8))?;
         writeln!(file, "    height_cells: {},", image.height.div_ceil(8))?;
-        writeln!(file, "    data: &{}_CELLS,", rust_identifier(&image.name))?;
+        if stereo {
+            writeln!(file, "    left: &{}_L_CELLS,", rust_identifier(&image.name))?;
+            writeln!(
+                file,
+                "    right: &{}_R_CELLS,",
+                rust_identifier(&image.name)
+            )?;
+        } else {
+            writeln!(file, "    data: &{}_CELLS,", rust_identifier(&image.name))?;
+        }
         writeln!(file, "}};")?;
         writeln!(file)?;
     }
 
     for animation in assets.animations {
         for (index, frame) in animation.frames.iter().enumerate() {
-            generate_cells(
+            generate_frame_cells(
                 &mut file,
                 opts,
                 &format!("{}_{}", animation.name, index),
-                &frame.cells,
+                frame,
             )?;
         }
+        let (struct_name, stereo) = match &animation.frames[0] {
+            FrameData::Mono(_) => ("vb_graphics::Image", false),
+            FrameData::Stereo { .. } => ("vb_graphics::StereoImage", true),
+        };
         writeln!(file, "#[allow(dead_code)]")?;
         writeln!(
             file,
-            "pub const {}: [vb_graphics::Image; {}] = [",
+            "pub const {}: [{struct_name}; {}] = [",
             rust_identifier(&animation.name),
             animation.frames.len()
         )?;
-        for (index, frame) in animation.frames.iter().enumerate() {
-            writeln!(file, "    vb_graphics::Image {{")?;
-            writeln!(file, "        width_cells: {},", frame.width.div_ceil(8))?;
-            writeln!(file, "        height_cells: {},", frame.height.div_ceil(8))?;
+        for index in 0..animation.frames.len() {
+            writeln!(file, "    {struct_name} {{")?;
             writeln!(
                 file,
-                "        data: &{}_{}_CELLS,",
-                rust_identifier(&animation.name),
-                index
+                "        width_cells: {},",
+                animation.width.div_ceil(8)
             )?;
+            writeln!(
+                file,
+                "        height_cells: {},",
+                animation.height.div_ceil(8)
+            )?;
+            if stereo {
+                writeln!(
+                    file,
+                    "        left: &{}_{}_L_CELLS,",
+                    rust_identifier(&animation.name),
+                    index
+                )?;
+                writeln!(
+                    file,
+                    "        right: &{}_{}_R_CELLS,",
+                    rust_identifier(&animation.name),
+                    index
+                )?;
+            } else {
+                writeln!(
+                    file,
+                    "        data: &{}_{}_CELLS,",
+                    rust_identifier(&animation.name),
+                    index
+                )?;
+            }
             writeln!(file, "    }},")?;
         }
         writeln!(file, "];")?;
@@ -230,6 +270,25 @@ pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
 
     file.flush()?;
     Ok(())
+}
+
+fn generate_frame_cells<T>(
+    file: &mut T,
+    opts: &Options,
+    name: &str,
+    frame: &FrameData,
+) -> Result<()>
+where
+    T: Write,
+{
+    match frame {
+        FrameData::Mono(cells) => generate_cells(file, opts, name, cells),
+        FrameData::Stereo { left, right } => {
+            generate_cells(file, opts, &format!("{name}_l"), left)?;
+            generate_cells(file, opts, &format!("{name}_r"), right)?;
+            Ok(())
+        }
+    }
 }
 
 fn generate_cells<T>(file: &mut T, opts: &Options, name: &str, cells: &[u16]) -> Result<()>

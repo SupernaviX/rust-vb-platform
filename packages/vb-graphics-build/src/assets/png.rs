@@ -5,12 +5,13 @@ use std::{
     fs::File,
     io::BufReader,
     path::{Path, PathBuf},
+    rc::Rc,
 };
 
 use super::{Shade, Transform};
 
 pub struct PngAtlas {
-    files: BTreeMap<PathBuf, PngContents>,
+    files: BTreeMap<PathBuf, Rc<PngContents>>,
 }
 
 impl PngAtlas {
@@ -20,12 +21,12 @@ impl PngAtlas {
         }
     }
 
-    pub fn open(&mut self, full_path: PathBuf) -> Result<&PngContents> {
+    pub fn open(&mut self, full_path: PathBuf) -> Result<Rc<PngContents>> {
         match self.files.entry(full_path) {
-            Entry::Occupied(e) => Ok(e.into_mut()),
+            Entry::Occupied(e) => Ok(e.into_mut().clone()),
             Entry::Vacant(e) => {
-                let contents = load_png_contents(e.key())?;
-                Ok(e.insert(contents))
+                let contents = Rc::new(load_png_contents(e.key())?);
+                Ok(e.insert(contents).clone())
             }
         }
     }
@@ -60,12 +61,12 @@ impl PngContents {
         self.pixels[y * self.size.0 + x]
     }
     pub fn view(
-        &self,
+        self: &Rc<Self>,
         position: (isize, isize),
         palette: Option<[u8; 3]>,
         size: (usize, usize),
         transform: Transform,
-    ) -> PngView<'_> {
+    ) -> PngView {
         let palette = palette.unwrap_or([64, 128, 192]);
         let (width, height) = size;
         let size = (
@@ -73,7 +74,7 @@ impl PngContents {
             (height as f64 * transform.scale) as usize,
         );
         PngView {
-            png: self,
+            png: self.clone(),
             palette,
             position,
             size,
@@ -105,15 +106,15 @@ fn load_png_contents(path: &Path) -> Result<PngContents> {
     }
 }
 
-pub struct PngView<'a> {
-    png: &'a PngContents,
+pub struct PngView {
+    png: Rc<PngContents>,
     palette: [u8; 3],
     position: (isize, isize),
     size: (usize, usize),
     transform: Transform,
 }
 
-impl PngView<'_> {
+impl PngView {
     pub fn size(&self) -> (usize, usize) {
         self.size
     }

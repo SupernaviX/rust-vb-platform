@@ -2,17 +2,20 @@ mod font;
 mod packer;
 mod png;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    rc::Rc,
+};
 
 use crate::{
     assets::{
         font::FontAtlas,
         packer::{InputRegion, Packer},
-        png::PngContents,
+        png::{PngContents, PngView},
     },
     config::{
-        RawAnimation, RawAssets, RawBgSprite, RawBgSpriteMap, RawFont, RawImage, RawImageRegion,
-        RawMask,
+        RawAnimation, RawAssets, RawBgSprite, RawBgSpriteMap, RawFont, RawImage, RawImageData,
+        RawImageRegion, RawMask,
     },
 };
 use anyhow::{Result, bail};
@@ -99,15 +102,15 @@ impl AssetProcessor {
 
     fn process_image(&mut self, name: String, image: RawImage) -> Result<()> {
         let chardata = image.chardata.clone();
-        let frame = self.extract_image(image)?;
+        let (width, height, frame) = self.extract_image(image)?;
         self.imagedata.insert(
             name.clone(),
             ImageData {
                 name,
-                width: frame.width,
-                height: frame.height,
-                cells: frame.cells,
+                width,
+                height,
                 chardata,
+                frame,
             },
         );
         Ok(())
@@ -115,13 +118,24 @@ impl AssetProcessor {
 
     fn process_animation(&mut self, name: String, animation: RawAnimation) -> Result<()> {
         let mut frames = vec![];
+        let mut size = None;
         for image in animation.images {
-            frames.push(self.extract_image(image)?);
+            let (frame_width, frame_height, frame) = self.extract_image(image)?;
+            size = size.or(Some((frame_width, frame_height)));
+            if size != Some((frame_width, frame_height)) {
+                bail!("all frames of animation \"{name}\" must be the same size");
+            }
+            frames.push(frame);
         }
+        let Some((width, height)) = size else {
+            bail!("animation \"{name}\" has no frames");
+        };
         self.animationdata.insert(
             name.clone(),
             AnimationData {
                 name,
+                width,
+                height,
                 chardata: animation.chardata,
                 frames,
             },
@@ -129,22 +143,42 @@ impl AssetProcessor {
         Ok(())
     }
 
-    fn extract_image(&mut self, image: RawImage) -> Result<FrameData> {
-        let png = self.pngs.open(image.region.file.to_path_buf())?;
-        let ImageRegion {
-            position,
-            size,
-            transform,
-        } = parse_region(png, &image.region)?;
-        let view = png.view(position, image.palette, size, transform);
+    fn extract_image(&mut self, image: RawImage) -> Result<(usize, usize, FrameData)> {
+        match image.data {
+            RawImageData::Mono(region) => {
+                let (width, height, cells) =
+                    self.extract_region(image.chardata, image.palette, region)?;
+                Ok((width, height, FrameData::Mono(cells)))
+            }
+            RawImageData::Stereo { left, right } => {
+                let (width_l, height_l, left) =
+                    self.extract_region(image.chardata.clone(), image.palette, left)?;
+                let (width_r, height_r, right) =
+                    self.extract_region(image.chardata, image.palette, right)?;
+                if width_l != width_r || height_l != height_r {
+                    bail!("left and right images must be same size");
+                }
+                Ok((width_l, height_l, FrameData::Stereo { left, right }))
+            }
+        }
+    }
 
+    fn extract_region(
+        &mut self,
+        chardata: String,
+        palette: Option<[u8; 3]>,
+        region: RawImageRegion,
+    ) -> Result<(usize, usize, Vec<u16>)> {
         let chardata = self
             .chardata
-            .entry(image.chardata)
+            .entry(chardata)
             .or_insert_with_key(|name| CharData {
                 name: name.clone(),
                 chars: vec![[0; 8]],
             });
+
+        let png = self.pngs.open(region.file.to_path_buf())?;
+        let view = extract_region(png, &region, palette)?;
 
         let mut cells = vec![];
         let (width, height) = view.size();
@@ -170,11 +204,7 @@ impl AssetProcessor {
             }
         }
 
-        Ok(FrameData {
-            width,
-            height,
-            cells,
-        })
+        Ok((width, height, cells))
     }
 
     fn process_bg_sprite_map(&mut self, name: String, raw: RawBgSpriteMap) -> Result<()> {
@@ -240,16 +270,8 @@ impl AssetProcessor {
                             }),
                         )
                     } else if let Some(data) = self.animationdata.get(&image) {
-                        let &FrameData {
-                            width: frame_width,
-                            height: frame_height,
-                            ..
-                        } = &data.frames[0];
-                        for frame in &data.frames {
-                            if frame.width != frame_width || frame.height != frame_height {
-                                bail!("all frames of animation \"{image}\" must be the same size");
-                            }
-                        }
+                        let frame_width = data.width;
+                        let frame_height = data.height;
                         let (columns, rows) =
                             animation_layout((frame_width, frame_height), data.frames.len());
                         (
@@ -324,12 +346,7 @@ impl AssetProcessor {
 
     fn process_mask(&mut self, name: String, mask: RawMask) -> Result<()> {
         let png = self.pngs.open(mask.region.file.to_path_buf())?;
-        let ImageRegion {
-            position,
-            size,
-            transform,
-        } = parse_region(png, &mask.region)?;
-        let view = png.view(position, None, size, transform);
+        let view = extract_region(png, &mask.region, None)?;
 
         let mut pixels = vec![];
         let (width, height) = view.size();
@@ -445,6 +462,19 @@ impl AssetProcessor {
     }
 }
 
+fn extract_region(
+    png: Rc<PngContents>,
+    region: &RawImageRegion,
+    palette: Option<[u8; 3]>,
+) -> Result<PngView> {
+    let ImageRegion {
+        position,
+        size,
+        transform,
+    } = parse_region(&png, region)?;
+    Ok(png.view(position, palette, size, transform))
+}
+
 fn parse_region(png: &PngContents, region: &RawImageRegion) -> Result<ImageRegion> {
     let position = region.position.unwrap_or_default();
     let size = region.size.unwrap_or(png.size);
@@ -551,24 +581,25 @@ impl CharData {
     }
 }
 
-pub struct AnimationData {
-    pub name: String,
-    chardata: String,
-    pub frames: Vec<FrameData>,
-}
-
-pub struct FrameData {
-    pub width: usize,
-    pub height: usize,
-    pub cells: Vec<u16>,
-}
-
 pub struct ImageData {
     pub name: String,
     pub width: usize,
     pub height: usize,
-    pub cells: Vec<u16>,
     chardata: String,
+    pub frame: FrameData,
+}
+
+pub struct AnimationData {
+    pub name: String,
+    pub width: usize,
+    pub height: usize,
+    chardata: String,
+    pub frames: Vec<FrameData>,
+}
+
+pub enum FrameData {
+    Mono(Vec<u16>),
+    Stereo { left: Vec<u16>, right: Vec<u16> },
 }
 
 pub struct BgSpriteMapData {

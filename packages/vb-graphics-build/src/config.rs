@@ -49,7 +49,7 @@ impl Options {
 #[derive(Deserialize, Debug)]
 struct RawAnimationSerde {
     chardata: String,
-    frames: Vec<RawImageRegion>,
+    frames: Vec<RawImageData>,
 }
 impl From<RawAnimationSerde> for RawAnimation {
     fn from(value: RawAnimationSerde) -> Self {
@@ -61,7 +61,7 @@ impl From<RawAnimationSerde> for RawAnimation {
                 .map(|f| RawImage {
                     chardata: value.chardata.clone(),
                     palette: None,
-                    region: f,
+                    data: f,
                 })
                 .collect(),
         }
@@ -193,14 +193,35 @@ pub struct RawImage {
     #[serde(default)]
     pub palette: Option<[u8; 3]>,
     #[serde(flatten)]
-    pub region: RawImageRegion,
+    pub data: RawImageData,
 }
 impl RawImage {
     fn fix(self, opts: &mut Options, dir: &Path, palette: Option<[u8; 3]>) -> Self {
         Self {
             palette: self.palette.or(palette),
-            region: self.region.fix_files(opts, dir),
+            data: self.data.fix_files(opts, dir),
             ..self
+        }
+    }
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(untagged)]
+pub enum RawImageData {
+    Mono(RawImageRegion),
+    Stereo {
+        left: RawImageRegion,
+        right: RawImageRegion,
+    },
+}
+impl RawImageData {
+    fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
+        match self {
+            Self::Mono(region) => Self::Mono(region.fix_files(opts, dir)),
+            Self::Stereo { left, right } => Self::Stereo {
+                left: left.fix_files(opts, dir),
+                right: right.fix_files(opts, dir),
+            },
         }
     }
 }
@@ -381,7 +402,7 @@ fn parse_spritesheet(path: &Path) -> Result<ParsedSpritesheet> {
         RawImage {
             chardata: file.chardata.clone(),
             palette,
-            region,
+            data: RawImageData::Mono(region),
         }
     };
     for (name, sprite) in file.sprites {
