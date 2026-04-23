@@ -11,5 +11,5 @@ test = false
 bench = false
 
 [dependencies]
-bitfield-struct = "0.12"
+bitfield-struct = "0.13"
 fixed = "1.31"
