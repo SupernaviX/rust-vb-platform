@@ -70,8 +70,8 @@ impl PngContents {
         let palette = palette.unwrap_or([64, 128, 192]);
         let (width, height) = size;
         let size = (
-            (width as f64 * transform.scale) as usize,
-            (height as f64 * transform.scale) as usize,
+            ((width as f64 * transform.scale) as usize).next_multiple_of(8),
+            ((height as f64 * transform.scale) as usize).next_multiple_of(8),
         );
         PngView {
             png: self.clone(),
