@@ -36,8 +36,12 @@ impl Packer {
             state: PackerState::new(bgmap_start),
         }
     }
-    pub fn pack(&mut self, unplaced_regions: Vec<InputRegion>) -> BTreeMap<String, OutputRegion> {
+    pub fn pack(
+        &mut self,
+        mut unplaced_regions: Vec<InputRegion>,
+    ) -> BTreeMap<String, OutputRegion> {
         let mut result = BTreeMap::new();
+        unplaced_regions.sort_by_key(|r| std::cmp::Reverse(r.width * r.height));
         for unplaced in unplaced_regions {
             let region = self.state.place(unplaced.width, unplaced.height);
             result.insert(unplaced.name, region);
