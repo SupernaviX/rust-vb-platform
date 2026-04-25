@@ -106,7 +106,17 @@ struct RawSpritesheet {
 }
 
 #[derive(Deserialize, Debug)]
-struct RawSprite {
+#[serde(untagged)]
+enum RawSprite {
+    Mono(RawSpriteData),
+    Stereo {
+        left: RawSpriteData,
+        right: RawSpriteData,
+    },
+}
+
+#[derive(Deserialize, Debug)]
+struct RawSpriteData {
     #[serde(default)]
     pub hflip: bool,
     #[serde(default)]
@@ -386,26 +396,32 @@ fn parse_spritesheet(path: &Path) -> Result<ParsedSpritesheet> {
         file.sprite_size.0 as isize + file.sprite_margin.0,
         file.sprite_size.1 as isize + file.sprite_margin.1,
     );
-    let sprite_to_image = |sprite: RawSprite| {
+    let data_to_region = |data: RawSpriteData| {
         let position = (
-            file.offset.0 + spacing.0 * sprite.position.0,
-            file.offset.1 + spacing.1 * sprite.position.1,
+            file.offset.0 + spacing.0 * data.position.0,
+            file.offset.1 + spacing.1 * data.position.1,
         );
-        let region = RawImageRegion {
+        RawImageRegion {
             file: file.file.clone(),
-            hflip: sprite.hflip,
-            vflip: sprite.vflip,
-            transpose: sprite.transpose,
-            rotate: sprite.rotate,
-            scale: sprite.scale,
+            hflip: data.hflip,
+            vflip: data.vflip,
+            transpose: data.transpose,
+            rotate: data.rotate,
+            scale: data.scale,
             position: Some(position),
             size: Some(file.sprite_size),
-        };
-        RawImage {
-            chardata: file.chardata.clone(),
-            palette,
-            data: RawImageData::Mono(region),
         }
+    };
+    let sprite_to_image = |sprite: RawSprite| RawImage {
+        chardata: file.chardata.clone(),
+        palette,
+        data: match sprite {
+            RawSprite::Mono(data) => RawImageData::Mono(data_to_region(data)),
+            RawSprite::Stereo { left, right } => RawImageData::Stereo {
+                left: data_to_region(left),
+                right: data_to_region(right),
+            },
+        },
     };
     for (name, sprite) in file.sprites {
         sprites.push((name, sprite_to_image(sprite)));
