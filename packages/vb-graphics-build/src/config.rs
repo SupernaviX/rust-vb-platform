@@ -112,6 +112,8 @@ enum RawSprite {
     Stereo {
         left: RawSpriteData,
         right: RawSpriteData,
+        #[serde(default)]
+        background: Option<String>,
     },
 }
 
@@ -128,6 +130,8 @@ struct RawSpriteData {
     #[serde(default = "no_zoom")]
     pub scale: f64,
     position: (isize, isize),
+    #[serde(default)]
+    pub background: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -224,15 +228,22 @@ pub enum RawImageData {
     Stereo {
         left: RawImageRegion,
         right: RawImageRegion,
+        #[serde(default)]
+        background: Option<String>,
     },
 }
 impl RawImageData {
     fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
         match self {
             Self::Mono(region) => Self::Mono(region.fix_files(opts, dir)),
-            Self::Stereo { left, right } => Self::Stereo {
+            Self::Stereo {
+                left,
+                right,
+                background,
+            } => Self::Stereo {
                 left: left.fix_files(opts, dir),
                 right: right.fix_files(opts, dir),
+                background,
             },
         }
     }
@@ -270,6 +281,8 @@ pub struct RawImageRegion {
     pub scale: f64,
     pub position: Option<(isize, isize)>,
     pub size: Option<(usize, usize)>,
+    #[serde(default)]
+    pub background: Option<String>,
 }
 impl RawImageRegion {
     fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
@@ -410,6 +423,7 @@ fn parse_spritesheet(path: &Path) -> Result<ParsedSpritesheet> {
             scale: data.scale,
             position: Some(position),
             size: Some(file.sprite_size),
+            background: data.background,
         }
     };
     let sprite_to_image = |sprite: RawSprite| RawImage {
@@ -417,9 +431,14 @@ fn parse_spritesheet(path: &Path) -> Result<ParsedSpritesheet> {
         palette,
         data: match sprite {
             RawSprite::Mono(data) => RawImageData::Mono(data_to_region(data)),
-            RawSprite::Stereo { left, right } => RawImageData::Stereo {
+            RawSprite::Stereo {
+                left,
+                right,
+                background,
+            } => RawImageData::Stereo {
                 left: data_to_region(left),
                 right: data_to_region(right),
+                background,
             },
         },
     };

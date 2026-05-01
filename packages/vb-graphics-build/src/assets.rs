@@ -35,9 +35,43 @@ pub fn process(assets: RawAssets) -> Result<Assets> {
     AssetProcessor::new().process(assets)
 }
 
+type RawCell = [[Shade; 8]; 8];
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Eye {
+    Mono,
+    Left,
+    Right,
+}
+
+struct FrameCells {
+    width: usize,
+    height: usize,
+    data: FrameCellData,
+}
+impl FrameCells {
+    fn for_eye(&self, eye: Eye) -> Result<&[RawCell]> {
+        match &self.data {
+            FrameCellData::Mono(shades) => Ok(shades),
+            FrameCellData::Stereo { left, right } => match eye {
+                Eye::Mono => bail!("cannot use stereo background for non-stereo sprite"),
+                Eye::Left => Ok(left),
+                Eye::Right => Ok(right),
+            },
+        }
+    }
+}
+enum FrameCellData {
+    Mono(Vec<RawCell>),
+    Stereo {
+        left: Vec<RawCell>,
+        right: Vec<RawCell>,
+    },
+}
+
 struct AssetProcessor {
     pngs: PngAtlas,
     fonts: FontAtlas,
+    image_bgs: BTreeMap<String, FrameCells>,
     chardata: BTreeMap<String, CharData>,
     animationdata: BTreeMap<String, AnimationData>,
     imagedata: BTreeMap<String, ImageData>,
@@ -52,6 +86,7 @@ impl AssetProcessor {
         Self {
             pngs: PngAtlas::new(),
             fonts: FontAtlas::new(),
+            image_bgs: BTreeMap::new(),
             chardata: BTreeMap::new(),
             animationdata: BTreeMap::new(),
             imagedata: BTreeMap::new(),
@@ -63,6 +98,37 @@ impl AssetProcessor {
     }
 
     pub fn process(mut self, mut assets: RawAssets) -> Result<Assets> {
+        let mut image_backgrounds = BTreeSet::new();
+        for image in assets.images.values() {
+            match &image.data {
+                RawImageData::Mono(region) => {
+                    if let Some(background) = region.background.as_ref() {
+                        image_backgrounds.insert(background.clone());
+                    }
+                }
+                RawImageData::Stereo {
+                    left,
+                    right,
+                    background,
+                } => {
+                    if let Some(background) = background {
+                        image_backgrounds.insert(background.clone());
+                    }
+                    if let Some(background) = left.background.as_ref() {
+                        image_backgrounds.insert(background.clone());
+                    }
+                    if let Some(background) = right.background.as_ref() {
+                        image_backgrounds.insert(background.clone());
+                    }
+                }
+            }
+        }
+        // Process backgrounds from images _before_ the images themselves.
+        for name in image_backgrounds {
+            if let Some(image) = assets.images.remove(&name) {
+                self.process_background(name, image)?;
+            }
+        }
         for (name, image) in assets.images {
             self.process_image(name, image)?;
         }
@@ -98,6 +164,53 @@ impl AssetProcessor {
             textures: self.texturedata.into_values().collect(),
             fonts: self.fontdata.into_values().collect(),
         })
+    }
+
+    fn process_background(&mut self, name: String, image: RawImage) -> Result<()> {
+        let (width, height, data) = match image.data {
+            RawImageData::Mono(region) => {
+                if region.background.is_some() {
+                    bail!("backgrounds cannot have backgrounds yet");
+                }
+                let (width, height, shades) = self.extract_region_shades(image.palette, region)?;
+                (width, height, FrameCellData::Mono(shades))
+            }
+            RawImageData::Stereo {
+                left,
+                right,
+                background,
+            } => {
+                if background.is_some() || left.background.is_some() || right.background.is_some() {
+                    bail!("backgrounds cannot have backgrounds yet");
+                }
+                let (width, height, left_shades) =
+                    self.extract_region_shades(image.palette, left)?;
+                let (right_width, right_height, right_shades) =
+                    self.extract_region_shades(image.palette, right)?;
+                if width != right_width || height != right_height {
+                    bail!(
+                        "image {name} has mismatched frame sizes ({width}, {height}) != ({right_width}, {right_height})"
+                    );
+                }
+                (
+                    width,
+                    height,
+                    FrameCellData::Stereo {
+                        left: left_shades,
+                        right: right_shades,
+                    },
+                )
+            }
+        };
+        self.image_bgs.insert(
+            name,
+            FrameCells {
+                width,
+                height,
+                data,
+            },
+        );
+        Ok(())
     }
 
     fn process_image(&mut self, name: String, image: RawImage) -> Result<()> {
@@ -147,14 +260,28 @@ impl AssetProcessor {
         match image.data {
             RawImageData::Mono(region) => {
                 let (width, height, cells) =
-                    self.extract_region(image.chardata, image.palette, region)?;
+                    self.extract_region(image.chardata, image.palette, region, None, Eye::Mono)?;
                 Ok((width, height, FrameData::Mono(cells)))
             }
-            RawImageData::Stereo { left, right } => {
-                let (width_l, height_l, left) =
-                    self.extract_region(image.chardata.clone(), image.palette, left)?;
-                let (width_r, height_r, right) =
-                    self.extract_region(image.chardata, image.palette, right)?;
+            RawImageData::Stereo {
+                left,
+                right,
+                background,
+            } => {
+                let (width_l, height_l, left) = self.extract_region(
+                    image.chardata.clone(),
+                    image.palette,
+                    left,
+                    background.as_ref(),
+                    Eye::Left,
+                )?;
+                let (width_r, height_r, right) = self.extract_region(
+                    image.chardata,
+                    image.palette,
+                    right,
+                    background.as_ref(),
+                    Eye::Right,
+                )?;
                 if width_l != width_r || height_l != height_r {
                     bail!("left and right images must be same size");
                 }
@@ -168,7 +295,34 @@ impl AssetProcessor {
         chardata: String,
         palette: Option<[u8; 3]>,
         region: RawImageRegion,
+        background: Option<&String>,
+        eye: Eye,
     ) -> Result<(usize, usize, Vec<u16>)> {
+        let background = region.background.as_ref().or(background).cloned();
+        let (width, height, mut shades) = self.extract_region_shades(palette, region)?;
+
+        if let Some(background) = background {
+            let Some(bg) = self.image_bgs.get(&background) else {
+                bail!("No image found with name \"{background}\"");
+            };
+            if bg.width != width || bg.height != height {
+                bail!(
+                    "background \"{background}\" ({}, {}) must be same size as image ({width}, {height})",
+                    bg.width,
+                    bg.height
+                );
+            }
+            for (cell, bg_cell) in shades.iter_mut().zip(bg.for_eye(eye)?) {
+                for (row, bg_row) in cell.iter_mut().zip(bg_cell) {
+                    for (pixel, bg_pixel) in row.iter_mut().zip(bg_row) {
+                        if *pixel == Shade::Transparent {
+                            *pixel = *bg_pixel;
+                        }
+                    }
+                }
+            }
+        }
+
         let chardata = self
             .chardata
             .entry(chardata)
@@ -177,8 +331,29 @@ impl AssetProcessor {
                 chars: vec![[0; 8]],
             });
 
+        let mut cells = vec![];
+        for shade in shades {
+            let (char, palette) = shades_to_chardata(shade)?;
+            let (index, hflip, vflip) = chardata.add_deduped(char);
+            cells.push(
+                Cell::new()
+                    .with_character(index)
+                    .with_hflip(hflip)
+                    .with_vflip(vflip)
+                    .with_palette(palette)
+                    .into_bits(),
+            );
+        }
+        Ok((width, height, cells))
+    }
+
+    fn extract_region_shades(
+        &mut self,
+        palette: Option<[u8; 3]>,
+        region: RawImageRegion,
+    ) -> Result<(usize, usize, Vec<RawCell>)> {
         let png = self.pngs.open(region.file.to_path_buf())?;
-        let view = extract_region(png, &region, palette)?;
+        let view = extract_region_view(png, &region, palette)?;
 
         let mut cells = vec![];
         let (width, height) = view.size();
@@ -190,17 +365,7 @@ impl AssetProcessor {
                         *shade = view.get_shade(x + cell_x, y + cell_y);
                     }
                 }
-
-                let (char, palette) = shades_to_chardata(shades)?;
-                let (index, hflip, vflip) = chardata.add_deduped(char);
-                cells.push(
-                    Cell::new()
-                        .with_character(index)
-                        .with_hflip(hflip)
-                        .with_vflip(vflip)
-                        .with_palette(palette)
-                        .into_bits(),
-                );
+                cells.push(shades);
             }
         }
 
@@ -364,7 +529,7 @@ impl AssetProcessor {
 
     fn process_mask(&mut self, name: String, mask: RawMask) -> Result<()> {
         let png = self.pngs.open(mask.region.file.to_path_buf())?;
-        let view = extract_region(png, &mask.region, None)?;
+        let view = extract_region_view(png, &mask.region, None)?;
 
         let mut pixels = vec![];
         let (width, height) = view.size();
@@ -480,7 +645,7 @@ impl AssetProcessor {
     }
 }
 
-fn extract_region(
+fn extract_region_view(
     png: Rc<PngContents>,
     region: &RawImageRegion,
     palette: Option<[u8; 3]>,
