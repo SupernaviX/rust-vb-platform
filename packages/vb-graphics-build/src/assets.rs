@@ -350,10 +350,29 @@ impl AssetProcessor {
                 );
             }
             for (cell, mask_cell) in shades.iter_mut().zip(m.for_eye(eye)?) {
+                let mut shade_counts: BTreeMap<Shade, u32> = BTreeMap::new();
                 for (row, mask_row) in cell.iter_mut().zip(mask_cell) {
                     for (pixel, mask_pixel) in row.iter_mut().zip(mask_row) {
                         if *mask_pixel == Shade::Transparent {
                             *pixel = Shade::Transparent;
+                        }
+                        *shade_counts.entry(*pixel).or_default() += 1;
+                    }
+                }
+                if shade_counts.len() > 4 {
+                    // If masking an image would make a cell use too many colors,
+                    // replace whichever color is used the least with transparency.
+                    let rarest_shade = shade_counts
+                        .into_iter()
+                        .filter(|(shade, _)| *shade != Shade::Transparent)
+                        .min_by_key(|(_, count)| *count)
+                        .map(|(shade, _)| shade)
+                        .unwrap();
+                    for row in cell.iter_mut() {
+                        for pixel in row.iter_mut() {
+                            if *pixel == rarest_shade {
+                                *pixel = Shade::Transparent;
+                            }
                         }
                     }
                 }
