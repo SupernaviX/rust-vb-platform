@@ -112,8 +112,8 @@ enum RawSprite {
     Stereo {
         left: RawSpriteData,
         right: RawSpriteData,
-        #[serde(default)]
-        background: Option<String>,
+        #[serde(default, flatten)]
+        effects: ImageEffects,
     },
 }
 
@@ -130,8 +130,8 @@ struct RawSpriteData {
     #[serde(default = "no_zoom")]
     pub scale: f64,
     position: (isize, isize),
-    #[serde(default)]
-    pub background: Option<String>,
+    #[serde(default, flatten)]
+    pub effects: ImageEffects,
 }
 
 #[derive(Deserialize, Debug)]
@@ -228,8 +228,8 @@ pub enum RawImageData {
     Stereo {
         left: RawImageRegion,
         right: RawImageRegion,
-        #[serde(default)]
-        background: Option<String>,
+        #[serde(default, flatten)]
+        effects: ImageEffects,
     },
 }
 impl RawImageData {
@@ -239,13 +239,24 @@ impl RawImageData {
             Self::Stereo {
                 left,
                 right,
-                background,
+                effects,
             } => Self::Stereo {
                 left: left.fix_files(opts, dir),
                 right: right.fix_files(opts, dir),
-                background,
+                effects,
             },
         }
+    }
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct ImageEffects {
+    pub background: Option<String>,
+    pub mask: Option<String>,
+}
+impl ImageEffects {
+    pub const fn is_empty(&self) -> bool {
+        self.background.is_none() && self.mask.is_none()
     }
 }
 
@@ -281,8 +292,8 @@ pub struct RawImageRegion {
     pub scale: f64,
     pub position: Option<(isize, isize)>,
     pub size: Option<(usize, usize)>,
-    #[serde(default)]
-    pub background: Option<String>,
+    #[serde(default, flatten)]
+    pub effects: ImageEffects,
 }
 impl RawImageRegion {
     fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
@@ -423,7 +434,7 @@ fn parse_spritesheet(path: &Path) -> Result<ParsedSpritesheet> {
             scale: data.scale,
             position: Some(position),
             size: Some(file.sprite_size),
-            background: data.background,
+            effects: data.effects,
         }
     };
     let sprite_to_image = |sprite: RawSprite| RawImage {
@@ -434,11 +445,11 @@ fn parse_spritesheet(path: &Path) -> Result<ParsedSpritesheet> {
             RawSprite::Stereo {
                 left,
                 right,
-                background,
+                effects,
             } => RawImageData::Stereo {
                 left: data_to_region(left),
                 right: data_to_region(right),
-                background,
+                effects,
             },
         },
     };

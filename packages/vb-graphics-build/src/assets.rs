@@ -14,8 +14,8 @@ use crate::{
         png::{PngContents, PngView},
     },
     config::{
-        RawAnimation, RawAssets, RawBgSprite, RawBgSpriteMap, RawFont, RawImage, RawImageData,
-        RawImageRegion, RawMask,
+        ImageEffects, RawAnimation, RawAssets, RawBgSprite, RawBgSpriteMap, RawFont, RawImage,
+        RawImageData, RawImageRegion, RawMask,
     },
 };
 use anyhow::{Result, bail};
@@ -53,7 +53,7 @@ impl FrameCells {
         match &self.data {
             FrameCellData::Mono(shades) => Ok(shades),
             FrameCellData::Stereo { left, right } => match eye {
-                Eye::Mono => bail!("cannot use stereo background for non-stereo sprite"),
+                Eye::Mono => bail!("cannot use stereo effect for non-stereo sprite"),
                 Eye::Left => Ok(left),
                 Eye::Right => Ok(right),
             },
@@ -71,7 +71,7 @@ enum FrameCellData {
 struct AssetProcessor {
     pngs: PngAtlas,
     fonts: FontAtlas,
-    image_bgs: BTreeMap<String, FrameCells>,
+    effect_data: BTreeMap<String, FrameCells>,
     chardata: BTreeMap<String, CharData>,
     animationdata: BTreeMap<String, AnimationData>,
     imagedata: BTreeMap<String, ImageData>,
@@ -86,7 +86,7 @@ impl AssetProcessor {
         Self {
             pngs: PngAtlas::new(),
             fonts: FontAtlas::new(),
-            image_bgs: BTreeMap::new(),
+            effect_data: BTreeMap::new(),
             chardata: BTreeMap::new(),
             animationdata: BTreeMap::new(),
             imagedata: BTreeMap::new(),
@@ -98,35 +98,35 @@ impl AssetProcessor {
     }
 
     pub fn process(mut self, mut assets: RawAssets) -> Result<Assets> {
-        let mut image_backgrounds = BTreeSet::new();
+        let mut effect_data = BTreeSet::new();
+        let mut process = |effects: &ImageEffects| {
+            if let Some(background) = effects.background.as_ref() {
+                effect_data.insert(background.clone());
+            }
+            if let Some(mask) = effects.mask.as_ref() {
+                effect_data.insert(mask.clone());
+            }
+        };
         for image in assets.images.values() {
             match &image.data {
                 RawImageData::Mono(region) => {
-                    if let Some(background) = region.background.as_ref() {
-                        image_backgrounds.insert(background.clone());
-                    }
+                    process(&region.effects);
                 }
                 RawImageData::Stereo {
                     left,
                     right,
-                    background,
+                    effects,
                 } => {
-                    if let Some(background) = background {
-                        image_backgrounds.insert(background.clone());
-                    }
-                    if let Some(background) = left.background.as_ref() {
-                        image_backgrounds.insert(background.clone());
-                    }
-                    if let Some(background) = right.background.as_ref() {
-                        image_backgrounds.insert(background.clone());
-                    }
+                    process(&left.effects);
+                    process(&right.effects);
+                    process(effects);
                 }
             }
         }
         // Process backgrounds from images _before_ the images themselves.
-        for name in image_backgrounds {
+        for name in effect_data {
             if let Some(image) = assets.images.remove(&name) {
-                self.process_background(name, image)?;
+                self.process_effect_data(name, image)?;
             }
         }
         for (name, image) in assets.images {
@@ -166,11 +166,11 @@ impl AssetProcessor {
         })
     }
 
-    fn process_background(&mut self, name: String, image: RawImage) -> Result<()> {
+    fn process_effect_data(&mut self, name: String, image: RawImage) -> Result<()> {
         let (width, height, data) = match image.data {
             RawImageData::Mono(region) => {
-                if region.background.is_some() {
-                    bail!("backgrounds cannot have backgrounds yet");
+                if !region.effects.is_empty() {
+                    bail!("effects cannot use effects yet");
                 }
                 let (width, height, shades) = self.extract_region_shades(image.palette, region)?;
                 (width, height, FrameCellData::Mono(shades))
@@ -178,10 +178,10 @@ impl AssetProcessor {
             RawImageData::Stereo {
                 left,
                 right,
-                background,
+                effects,
             } => {
-                if background.is_some() || left.background.is_some() || right.background.is_some() {
-                    bail!("backgrounds cannot have backgrounds yet");
+                if !effects.is_empty() || !left.effects.is_empty() || !right.effects.is_empty() {
+                    bail!("effects cannot use effects yet");
                 }
                 let (width, height, left_shades) =
                     self.extract_region_shades(image.palette, left)?;
@@ -202,7 +202,7 @@ impl AssetProcessor {
                 )
             }
         };
-        self.image_bgs.insert(
+        self.effect_data.insert(
             name,
             FrameCells {
                 width,
@@ -259,27 +259,32 @@ impl AssetProcessor {
     fn extract_image(&mut self, image: RawImage) -> Result<(usize, usize, FrameData)> {
         match image.data {
             RawImageData::Mono(region) => {
-                let (width, height, cells) =
-                    self.extract_region(image.chardata, image.palette, region, None, Eye::Mono)?;
+                let (width, height, cells) = self.extract_region(
+                    image.chardata,
+                    image.palette,
+                    region,
+                    &ImageEffects::default(),
+                    Eye::Mono,
+                )?;
                 Ok((width, height, FrameData::Mono(cells)))
             }
             RawImageData::Stereo {
                 left,
                 right,
-                background,
+                effects,
             } => {
                 let (width_l, height_l, left) = self.extract_region(
                     image.chardata.clone(),
                     image.palette,
                     left,
-                    background.as_ref(),
+                    &effects,
                     Eye::Left,
                 )?;
                 let (width_r, height_r, right) = self.extract_region(
                     image.chardata,
                     image.palette,
                     right,
-                    background.as_ref(),
+                    &effects,
                     Eye::Right,
                 )?;
                 if width_l != width_r || height_l != height_r {
@@ -295,14 +300,25 @@ impl AssetProcessor {
         chardata: String,
         palette: Option<[u8; 3]>,
         region: RawImageRegion,
-        background: Option<&String>,
+        effects: &ImageEffects,
         eye: Eye,
     ) -> Result<(usize, usize, Vec<u16>)> {
-        let background = region.background.as_ref().or(background).cloned();
+        let background = region
+            .effects
+            .background
+            .as_ref()
+            .or(effects.background.as_ref())
+            .cloned();
+        let mask = region
+            .effects
+            .mask
+            .as_ref()
+            .or(effects.mask.as_ref())
+            .cloned();
         let (width, height, mut shades) = self.extract_region_shades(palette, region)?;
 
         if let Some(background) = background {
-            let Some(bg) = self.image_bgs.get(&background) else {
+            let Some(bg) = self.effect_data.get(&background) else {
                 bail!("No image found with name \"{background}\"");
             };
             if bg.width != width || bg.height != height {
@@ -317,6 +333,27 @@ impl AssetProcessor {
                     for (pixel, bg_pixel) in row.iter_mut().zip(bg_row) {
                         if *pixel == Shade::Transparent {
                             *pixel = *bg_pixel;
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(mask) = mask {
+            let Some(m) = self.effect_data.get(&mask) else {
+                bail!("No image found with name \"{mask}\"");
+            };
+            if m.width != width || m.height != height {
+                bail!(
+                    "mask \"{mask}\" ({}, {}) must be same size as image ({width}, {height})",
+                    m.width,
+                    m.height
+                );
+            }
+            for (cell, mask_cell) in shades.iter_mut().zip(m.for_eye(eye)?) {
+                for (row, mask_row) in cell.iter_mut().zip(mask_cell) {
+                    for (pixel, mask_pixel) in row.iter_mut().zip(mask_row) {
+                        if *mask_pixel == Shade::Transparent {
+                            *pixel = Shade::Transparent;
                         }
                     }
                 }
