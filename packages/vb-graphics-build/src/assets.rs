@@ -739,6 +739,11 @@ fn parse_region(png: &PngContents, region: &RawImageRegion) -> Result<ImageRegio
         }
         _ => bail!("Can only rotate multiples of 90 degrees"),
     }
+    let size = if transform.transpose {
+        (size.1, size.0)
+    } else {
+        size
+    };
 
     Ok(ImageRegion {
         position,
