@@ -162,9 +162,7 @@ impl ChannelPlayer {
     }
 
     pub fn stop_note(&mut self) {
-        let Some(started) = self.note_started.take() else {
-            return;
-        };
+        let started = self.note_started.take().unwrap_or(Moment::START);
         let interval_units = (self.now.unwrap_or(Moment::START) - started)
             .div_duration_f32(INTERVAL_UNIT)
             .round() as u8;
