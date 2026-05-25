@@ -76,6 +76,15 @@ struct RawAssetFile {
 pub struct RawWaveform {
     pub values: Option<[u8; 32]>,
     pub fur: Option<FurWaveform>,
+    pub file: Option<PathBuf>,
+}
+impl RawWaveform {
+    fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
+        Self {
+            file: self.file.map(|f| opts.input_path(&dir.join(f))),
+            ..self
+        }
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -182,7 +191,9 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
         }
 
         for (name, instrument) in file.waveforms {
-            assets.waveforms.insert(name, instrument);
+            assets
+                .waveforms
+                .insert(name, instrument.fix_files(opts, dir));
         }
 
         for (name, midi) in file.midis {

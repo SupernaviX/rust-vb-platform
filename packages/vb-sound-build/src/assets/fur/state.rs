@@ -171,7 +171,7 @@ impl VolumeCursor {
         self.fixed = Some(value as f64 / 15.0);
     }
 
-    fn load_instrument(&mut self, instr: &FurInstrument) {
+    fn load_instrument(&mut self, instr: &impl FurInstrument) {
         self.instrument = None;
         if let Some(macros) = instr.macros() {
             for m in macros {
@@ -253,7 +253,7 @@ impl WavedataIndexCursor {
         }
     }
 
-    fn load_instrument(&mut self, instr: &FurInstrument) {
+    fn load_instrument(&mut self, instr: &impl FurInstrument) {
         if let Some(synth) = instr.wavetable_synth_data() {
             self.value = Some(synth.first_wave as usize);
         };
@@ -335,7 +335,7 @@ impl PitchCursor {
         self.note_event.take()
     }
 
-    fn load_instrument(&mut self, instr: &FurInstrument) {
+    fn load_instrument(&mut self, instr: &impl FurInstrument) {
         self.instrument_arpeggio = None;
         if let Some(macros) = instr.macros() {
             for m in macros {

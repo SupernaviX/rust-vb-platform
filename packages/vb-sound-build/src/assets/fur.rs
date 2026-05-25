@@ -16,13 +16,25 @@ use crate::{
     assets::{
         ChannelData, WaveformSetData,
         fur::{
-            parser::{FurEffect, FurHeader, FurInfoBlock, FurPatternRow},
+            parser::{FurEffect, FurHeader, FurInfoBlock, FurPatternRow, FurWavetableFile},
             state::FurChannelState,
         },
         sound::{ChannelBuilder, ChannelPlayer, Moment},
     },
     config::ChannelEffects,
 };
+
+pub fn decode_waveform(file: &Path) -> Result<[u8; 32]> {
+    let bytes = fs::read(file)?;
+    let file = FurWavetableFile::read(&mut Cursor::new(bytes))?;
+    file.wavetable
+        .data
+        .into_iter()
+        .map(|i| i as u8)
+        .collect::<Vec<u8>>()
+        .try_into()
+        .map_err(|v: Vec<u8>| anyhow::anyhow!("invalid wavetable ({} value(s))", v.len()))
+}
 
 pub struct FurDecoder {
     name: String,

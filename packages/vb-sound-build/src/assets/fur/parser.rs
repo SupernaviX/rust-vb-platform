@@ -56,7 +56,7 @@ pub struct FurInfoBlock {
     #[br(pad_after = 20)]
     tuning: f32,
     #[br(count = instrument_count)]
-    pub instruments: Vec<FilePtr32<FurInstrument>>,
+    pub instruments: Vec<FilePtr32<FurInlineInstrument>>,
     #[br(count = wavetable_count)]
     pub wavetables: Vec<FilePtr32<FurWavetable>>,
     #[br(count = sample_count)]
@@ -88,7 +88,7 @@ pub struct FurInfoBlock {
 
 #[derive(BinRead, Debug)]
 #[br(little, magic = b"INS2")]
-pub struct FurInstrument {
+pub struct FurInlineInstrument {
     size: u32,
     #[br(assert(version >= 232))]
     version: u16,
@@ -97,19 +97,43 @@ pub struct FurInstrument {
     #[br(parse_with = until_exclusive(|e: &FurFeatureEnvelope| e.is_end()), map = |e: Vec<FurFeatureEnvelope>| e.into_iter().map(|e| e.feature).collect())]
     pub features: Vec<FurFeature>,
 }
-impl FurInstrument {
-    pub fn wavetable_synth_data(&self) -> Option<&FurWavetableSynthData> {
-        self.features.iter().find_map(|f| match f {
+impl FurInstrument for FurInlineInstrument {
+    fn features(&self) -> &[FurFeature] {
+        &self.features
+    }
+}
+
+#[derive(BinRead, Debug)]
+#[br(little, magic = b"FINS")]
+pub struct FurInstrumentFile {
+    #[br(assert(version >= 232))]
+    version: u16,
+    #[br(assert(instrument_type == 16))]
+    instrument_type: u16,
+    #[br(parse_with = until_exclusive(|e: &FurFeatureEnvelope| e.is_end()), map = |e: Vec<FurFeatureEnvelope>| e.into_iter().map(|e| e.feature).collect())]
+    pub features: Vec<FurFeature>,
+}
+impl FurInstrument for FurInstrumentFile {
+    fn features(&self) -> &[FurFeature] {
+        &self.features
+    }
+}
+pub trait FurInstrument {
+    fn wavetable_synth_data(&self) -> Option<&FurWavetableSynthData> {
+        self.features().iter().find_map(|f| match f {
             FurFeature::WavetableSynthData(data) => Some(data),
             _ => None,
         })
     }
-    pub fn macros(&self) -> Option<&[FurMacro]> {
-        self.features.iter().find_map(|f| match f {
+
+    fn macros(&self) -> Option<&[FurMacro]> {
+        self.features().iter().find_map(|f| match f {
             FurFeature::MacroData(data) => Some(data.as_slice()),
             _ => None,
         })
     }
+
+    fn features(&self) -> &[FurFeature];
 }
 
 #[derive(BinRead, Debug)]
@@ -365,4 +389,12 @@ pub struct FurPatternRow {
     pub instrument: Option<u8>,
     pub volume: Option<u8>,
     pub effects: Vec<FurEffect>,
+}
+
+#[derive(BinRead, Debug)]
+#[br(little, magic = b"-Furnace waveta-")]
+pub struct FurWavetableFile {
+    #[br(assert(version >= 232), pad_after = 2)]
+    pub version: u16,
+    pub wavetable: FurWavetable,
 }

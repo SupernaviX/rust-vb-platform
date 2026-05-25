@@ -21,7 +21,10 @@ pub fn process(assets: RawAssets) -> Result<Assets> {
         furs.insert(name.clone(), decoder);
     }
     for (name, instrument) in assets.waveforms {
-        if let Some(fur) = instrument.fur {
+        if let Some(file) = instrument.file {
+            let waveform = fur::decode_waveform(&file)?;
+            named_waveforms.insert(name, waveform);
+        } else if let Some(fur) = instrument.fur {
             let decoder = furs.get(&fur.name).expect("unrecognized fur");
             let waveform = decoder
                 .wavetable(fur.wavetable)
