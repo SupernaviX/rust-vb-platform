@@ -1,25 +1,26 @@
 mod parser;
-mod state;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use binrw::BinRead;
 use flate2::bufread::ZlibDecoder;
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::BTreeMap,
     fs,
     io::{Cursor, Read},
     path::Path,
-    time::Duration,
 };
 
 use crate::{
     assets::{
         ChannelData, WaveformSetData,
-        fur::{
-            parser::{FurEffect, FurHeader, FurInfoBlock, FurPatternRow, FurWavetableFile},
-            state::FurChannelState,
+        fur::parser::{
+            FurEffect, FurFeature, FurHeader, FurInfoBlock, FurMacro, FurMacroBody,
+            FurWavetableFile,
         },
-        sound::{ChannelBuilder, ChannelPlayer, Moment},
+        ir::{
+            self, Channel, ControlEffect, Effect, Instrument, InstrumentMacro, IrInfo, NoteEvent,
+            PanningEffect, Pattern, PatternRow, PitchEffect, VolumeEffect,
+        },
     },
     config::ChannelEffects,
 };
@@ -66,319 +67,179 @@ impl FurDecoder {
     }
 
     pub fn decode(self, waveforms: &mut WaveformSetData) -> Result<Vec<ChannelData>> {
-        let info = &self.info;
-        assert!(info.subsong_pointers.is_empty());
-        assert!(info.samples.is_empty());
-        let patterns = PatternManager::new(info);
-        let mut clock = Clock::new(info);
-        let mut channels: Vec<FurChannel> = (0..6).map(FurChannel::new).collect();
-        let mut orders_seen = HashSet::new();
-        let mut order = 0;
-        let mut start_row = 0;
-        let mut tick = 0;
-        'outer: loop {
-            if !orders_seen.insert(order) {
-                for channel in &mut channels {
-                    channel.jump_to(order);
-                }
-                break;
-            }
-            for channel in &mut channels {
-                channel.start_pattern(order);
-            }
-            let start = start_row;
-            start_row = 0;
-            for rows in patterns.iter_all(order).skip(start) {
-                let mut next = NextAction::Continue;
-                for (channel, row) in channels.iter_mut().zip(rows) {
-                    channel.handle_row(row, info);
-                    for effect in &row.effects {
-                        match effect {
-                            FurEffect::JumpToOrder(o) => {
-                                next = next.max(NextAction::Jump {
-                                    order: *o as usize,
-                                    row: 0,
-                                });
+        let Self {
+            name,
+            info,
+            looping,
+        } = self;
+        let mut ir = IrInfo {
+            name,
+            pattern_length: info.pattern_length,
+            ticks_per_row: info.speed_1,
+            ticks_per_second: info.ticks_per_second,
+            virtual_tempo_numerator: info.virtual_tempo_numerator,
+            virtual_tempo_denominator: info.virtual_tempo_denominator,
+            instruments: vec![],
+            channels: BTreeMap::new(),
+        };
+        for raw_instrument in &info.instruments {
+            let mut instrument = Instrument {
+                waveform: None,
+                volume_macro: None,
+                arpeggio_macro: None,
+                waveform_macro: None,
+            };
+            for feature in &raw_instrument.features {
+                match feature {
+                    FurFeature::WavetableSynthData(ws) => {
+                        instrument.waveform = Some(load_waveform(&info, ws.first_wave as usize)?);
+                    }
+                    FurFeature::MacroData(md) => {
+                        for m in md {
+                            match m {
+                                FurMacro::Volume(mb) => {
+                                    let m = parse_macro(mb, |v| Ok(*v as f64 / 15.0))?;
+                                    instrument.volume_macro = Some(m)
+                                }
+                                FurMacro::Arpeggio(mb) => {
+                                    let m = parse_macro(mb, |a| Ok(*a))?;
+                                    instrument.arpeggio_macro = Some(m);
+                                }
+                                FurMacro::Waveform(mb) => {
+                                    let m = parse_macro(mb, |i| load_waveform(&info, *i as usize))?;
+                                    instrument.waveform_macro = Some(m);
+                                }
+                                _ => {}
                             }
-                            FurEffect::JumpToNextPattern(r) => {
-                                next = next.max(NextAction::Jump {
-                                    order: order + 1,
-                                    row: *r as u64,
-                                });
-                            }
-                            FurEffect::SetVirtualTempoNumerator(n) => {
-                                clock.set_virtual_numerator(tick, *n as u16);
-                            }
-                            FurEffect::SetVirtualTempoDenominator(d) => {
-                                clock.set_virtual_denominator(tick, *d as u16);
-                            }
-                            FurEffect::StopSong => {
-                                next = next.max(NextAction::Stop);
-                            }
-                            _ => {}
                         }
                     }
-                }
-                tick += info.speed_1 as u64;
-                for channel in &mut channels {
-                    channel.advance_time(tick, &clock, info, waveforms)?;
-                }
-                match next {
-                    NextAction::Continue => {}
-                    NextAction::Jump { order: o, row } => {
-                        order = o;
-                        start_row = row as usize;
-                        continue 'outer;
-                    }
-                    NextAction::Stop => {
-                        break 'outer;
-                    }
+                    _ => {}
                 }
             }
+            ir.instruments.push(instrument);
+        }
 
-            if order == info.orders_length as usize - 1 {
-                if self.looping {
-                    order = 0
-                } else {
-                    break;
-                }
-            } else {
-                order += 1;
+        let mut patterns: BTreeMap<u8, BTreeMap<u8, Pattern>> = BTreeMap::new();
+        for fur_pattern in &info.patterns {
+            let mut data = BTreeMap::new();
+            for fur_row in &fur_pattern.data {
+                let note = match fur_row.note {
+                    Some(182 | 181) => Some(NoteEvent::Release),
+                    Some(180) => Some(NoteEvent::Stop),
+                    Some(note) => Some(NoteEvent::Start(note - 48)),
+                    None => None,
+                };
+                let row = PatternRow {
+                    note,
+                    instrument: fur_row.instrument.map(|i| i as usize),
+                    volume: fur_row.volume.map(|v| v as f64 / 15.0),
+                    effects: parse_effects(&fur_row.effects, &info),
+                };
+                data.insert(fur_row.index as u8, row);
             }
+            patterns
+                .entry(fur_pattern.channel)
+                .or_default()
+                .insert(fur_pattern.index as u8, Pattern { data });
         }
 
-        Ok(channels
-            .into_iter()
-            .flat_map(|c| c.build(&self.name))
-            .collect())
-    }
-}
-
-struct FurChannel {
-    channel: usize,
-    player: ChannelPlayer,
-    state: FurChannelState,
-    next_tick: u64,
-}
-impl FurChannel {
-    fn new(channel: usize) -> Self {
-        let mut player = ChannelPlayer::new(ChannelEffects::default(), false);
-        player.set_envelope(15);
-        player.set_volume((15, 15));
-        player.advance_time(Moment::START);
-        Self {
-            channel,
-            player,
-            state: FurChannelState::new(),
-            next_tick: 0,
+        for (channel, order) in info.orders.into_iter().enumerate() {
+            let channel_patterns = patterns.remove(&(channel as u8)).unwrap();
+            ir.channels.insert(
+                channel as u8,
+                Channel {
+                    patterns: channel_patterns,
+                    order,
+                    effects: ChannelEffects::default(),
+                },
+            );
         }
-    }
-    fn handle_row(&mut self, row: &FurPatternRow, info: &FurInfoBlock) {
-        self.state.handle_row(row, info);
-    }
-    fn advance_time(
-        &mut self,
-        tick: u64,
-        clock: &Clock,
-        info: &FurInfoBlock,
-        waveforms: &mut WaveformSetData,
-    ) -> Result<()> {
-        for (new_tick, update) in (self.next_tick..).zip(self.state.advance(tick - self.next_tick))
-        {
-            self.player.advance_time(clock.moment(new_tick));
-            update.apply(&mut self.player, info, waveforms)?;
-        }
-        self.next_tick = tick;
-        Ok(())
-    }
-    fn start_pattern(&mut self, order: usize) {
-        self.player.start_pattern(order as u8);
-    }
-    fn jump_to(&mut self, order: usize) {
-        self.player.go_to_pattern(order as u8);
-    }
-    fn build(self, name: &str) -> Option<ChannelData> {
-        if self.state.is_empty() {
-            return None;
-        };
-        let builder = ChannelBuilder {
-            name: format!("{name}_{}", self.channel),
-            player: self.player,
-        };
-        Some(builder.build())
+
+        ir::decode(ir, waveforms, looping)
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum NextAction {
-    Continue,
-    Jump { order: usize, row: u64 },
-    Stop,
-}
-
-fn find_wavetable(info: &FurInfoBlock, index: usize) -> Option<[u8; 32]> {
-    let wavetable = &info.wavetables.get(index)?.value;
-    assert!(wavetable.data.len() == 32, "Invalid wavetable data");
+fn load_waveform(info: &FurInfoBlock, index: usize) -> Result<[u8; 32]> {
+    let Some(wavetable) = info.wavetables.get(index) else {
+        bail!("Invalid wavetable index {index}");
+    };
+    if wavetable.data.len() != 32 {
+        bail!("Invalid wavetable data");
+    }
     let mut result = [0; 32];
     for (index, sample) in wavetable.data.iter().enumerate() {
         result[index] = *sample as u8;
     }
-    Some(result)
+    Ok(result)
 }
 
-struct Clock {
-    tempos: BTreeMap<u64, Tempo>,
-}
-impl Clock {
-    fn new(info: &FurInfoBlock) -> Self {
-        let initial_tempo = Tempo::new(
-            Moment::START,
-            info.ticks_per_second,
-            info.virtual_tempo_numerator,
-            info.virtual_tempo_denominator,
-        );
-        let mut tempos = BTreeMap::new();
-        tempos.insert(0, initial_tempo);
-        Self { tempos }
-    }
-
-    fn moment(&self, tick: u64) -> Moment {
-        let (tempo, elapsed) = self.tempo_at(tick);
-        tempo.start + (tempo.per_tick * elapsed as u32)
-    }
-
-    fn set_virtual_numerator(&mut self, tick: u64, value: u16) {
-        let (tempo, elapsed) = self.tempo_at(tick);
-        if tempo.virtual_numerator == value {
-            return;
-        }
-        let start = tempo.start + (tempo.per_tick * elapsed as u32);
-        let new_tempo = Tempo::new(
-            start,
-            tempo.ticks_per_second,
-            value,
-            tempo.virtual_denominator,
-        );
-        self.tempos.insert(tick, new_tempo);
-    }
-
-    fn set_virtual_denominator(&mut self, tick: u64, value: u16) {
-        let (tempo, elapsed) = self.tempo_at(tick);
-        if tempo.virtual_denominator == value {
-            return;
-        }
-        let start = tempo.start + (tempo.per_tick * elapsed as u32);
-        let new_tempo = Tempo::new(
-            start,
-            tempo.ticks_per_second,
-            tempo.virtual_numerator,
-            value,
-        );
-        self.tempos.insert(tick, new_tempo);
-    }
-
-    fn tempo_at(&self, tick: u64) -> (&Tempo, u64) {
-        let (start_tick, tempo) = self.tempos.range(..=tick).next_back().unwrap();
-        let elapsed = tick - *start_tick;
-        (tempo, elapsed)
-    }
-}
-
-struct Tempo {
-    start: Moment,
-    ticks_per_second: f32,
-    virtual_numerator: u16,
-    virtual_denominator: u16,
-    per_tick: Duration,
-}
-impl Tempo {
-    fn new(
-        start: Moment,
-        ticks_per_second: f32,
-        virtual_numerator: u16,
-        virtual_denominator: u16,
-    ) -> Self {
-        Self {
-            start,
-            ticks_per_second,
-            virtual_numerator,
-            virtual_denominator,
-            per_tick: Duration::from_secs_f32(
-                virtual_denominator as f32 / (virtual_numerator as f32 * ticks_per_second),
-            ),
-        }
-    }
-}
-
-struct PatternManager {
-    orders: [Vec<u8>; 6],
-    patterns: HashMap<(u8, u16), Vec<FurPatternRow>>,
-}
-impl PatternManager {
-    fn new(info: &FurInfoBlock) -> Self {
-        let orders = info.orders.clone();
-        let mut patterns = HashMap::new();
-        for pattern in &info.patterns {
-            let mut data = vec![];
-            let mut index = 0;
-            for row in &pattern.data {
-                while index < row.index {
-                    data.push(FurPatternRow {
-                        index,
-                        note: None,
-                        instrument: None,
-                        volume: None,
-                        effects: vec![],
-                    });
-                    index += 1;
-                }
-                data.push(row.clone());
-                index = row.index + 1;
-            }
-            while index < info.pattern_length as u64 {
-                data.push(FurPatternRow {
-                    index,
-                    note: None,
-                    instrument: None,
-                    volume: None,
-                    effects: vec![],
-                });
-                index += 1;
-            }
-            patterns.insert((pattern.channel, pattern.index), data);
-        }
-        Self { orders, patterns }
-    }
-
-    fn iter(&self, channel: usize, order: usize) -> impl Iterator<Item = &FurPatternRow> {
-        let index = self.orders[channel][order];
-        let pattern = self.patterns.get(&(channel as u8, index as u16)).unwrap();
-        pattern.iter()
-    }
-
-    fn iter_all(&self, order: usize) -> impl Iterator<Item = [&FurPatternRow; 6]> {
-        Multizip {
-            iters: std::array::from_fn(|i| self.iter(i, order)),
-        }
-    }
-}
-
-struct Multizip<I, T, const N: usize>
+fn parse_macro<T1, T2, F>(mb: &FurMacroBody<T1>, map: F) -> Result<InstrumentMacro<T2>>
 where
-    I: Iterator<Item = T>,
+    T1: BinRead,
+    for<'a> <T1 as BinRead>::Args<'a>: Default + Clone,
+    F: Fn(&T1) -> Result<T2>,
 {
-    iters: [I; N],
-}
-impl<I, T, const N: usize> Iterator for Multizip<I, T, N>
-where
-    I: Iterator<Item = T>,
-{
-    type Item = [T; N];
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut result = [const { std::mem::MaybeUninit::<T>::uninit() }; N];
-        for (index, iter) in self.iters.iter_mut().enumerate() {
-            result[index].write(iter.next()?);
-        }
-        Some(result.map(|x| unsafe { x.assume_init() }))
+    let mut data = vec![];
+    for value in &mb.data {
+        data.push(map(value)?);
     }
+    Ok(InstrumentMacro {
+        macro_loop: mb.macro_loop,
+        macro_release: mb.macro_release,
+        macro_delay: mb.macro_delay,
+        macro_speed: mb.macro_speed,
+        data,
+    })
+}
+
+fn parse_effects(effects: &[FurEffect], info: &FurInfoBlock) -> Vec<Effect> {
+    assert_eq!(info.linear_pitch, 1);
+    let pitch_slide_speed = info.pitch_slide_speed as i16;
+    effects
+        .iter()
+        .cloned()
+        .flat_map(|e| match e {
+            FurEffect::Arpeggio(x, y) => Some(Effect::Pitch(PitchEffect::Arpeggio(x, y))),
+            FurEffect::PitchSlideUp(speed) => Some(Effect::Pitch(PitchEffect::PitchSlide(
+                speed as i16 * pitch_slide_speed,
+            ))),
+            FurEffect::PitchSlideDown(speed) => Some(Effect::Pitch(PitchEffect::PitchSlide(
+                speed as i16 * -pitch_slide_speed,
+            ))),
+            FurEffect::Portamento(speed) => Some(Effect::Pitch(PitchEffect::Portamento(
+                speed as i16 * pitch_slide_speed,
+            ))),
+            FurEffect::Vibrato(speed, depth) => {
+                Some(Effect::Pitch(PitchEffect::Vibrato(speed, depth)))
+            }
+            FurEffect::SetPanning(l, r) => Some(Effect::Panning(PanningEffect::SetPanning(
+                l as f64 / 15.0,
+                r as f64 / 15.0,
+            ))),
+            FurEffect::VolumeSlide(up, down) => Some(Effect::Volume(VolumeEffect::VolumeSlide(
+                (up as i16 - down as i16) as f64 / 64.0,
+            ))),
+            FurEffect::JumpToOrder(o) => Some(Effect::Control(ControlEffect::JumpToOrder(o))),
+            FurEffect::JumpToNextPattern(r) => {
+                Some(Effect::Control(ControlEffect::JumpToNextPattern(r)))
+            }
+            FurEffect::SetVolumeLeft(v) => Some(Effect::Panning(PanningEffect::SetVolumeLeft(
+                v as f64 / 15.0,
+            ))),
+            FurEffect::SetVolumeRight(v) => Some(Effect::Panning(PanningEffect::SetVolumeRight(
+                v as f64 / 15.0,
+            ))),
+            FurEffect::ArpeggioSpeed(s) => Some(Effect::Pitch(PitchEffect::ArpeggioSpeed(s))),
+            FurEffect::NoteCut(ticks) => Some(Effect::Pitch(PitchEffect::NoteCut(ticks))),
+            FurEffect::NoteRelease(ticks) => Some(Effect::Pitch(PitchEffect::NoteRelease(ticks))),
+            FurEffect::SetVirtualTempoNumerator(n) => {
+                Some(Effect::Control(ControlEffect::SetVirtualTempoNumerator(n)))
+            }
+            FurEffect::SetVirtualTempoDenominator(d) => Some(Effect::Control(
+                ControlEffect::SetVirtualTempoDenominator(d),
+            )),
+            FurEffect::StopSong => Some(Effect::Control(ControlEffect::StopSong)),
+            FurEffect::Unknown(_, _) => None,
+        })
+        .collect()
 }

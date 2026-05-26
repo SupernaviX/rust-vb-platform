@@ -1,8 +1,9 @@
 mod fur;
+mod ir;
 mod midi;
 mod sound;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use anyhow::{Result, bail};
 
@@ -15,7 +16,7 @@ pub fn process(assets: RawAssets) -> Result<Assets> {
     let mut waveform_sets = vec![];
     let mut named_waveforms = HashMap::new();
 
-    let mut furs = HashMap::new();
+    let mut furs = BTreeMap::new();
     for (name, raw) in &assets.furs {
         let decoder = FurDecoder::new(name, &raw.file, raw.looping)?;
         furs.insert(name.clone(), decoder);
