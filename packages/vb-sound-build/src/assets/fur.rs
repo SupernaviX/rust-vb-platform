@@ -74,13 +74,14 @@ impl FurDecoder {
         } = self;
         let mut ir = IrInfo {
             name,
-            pattern_length: info.pattern_length,
+            pattern_length: info.pattern_length as usize,
             ticks_per_row: info.speed_1,
             ticks_per_second: info.ticks_per_second,
             virtual_tempo_numerator: info.virtual_tempo_numerator,
             virtual_tempo_denominator: info.virtual_tempo_denominator,
             instruments: vec![],
             channels: BTreeMap::new(),
+            control: vec![BTreeMap::new(); info.orders[0].len()],
         };
         for raw_instrument in &info.instruments {
             let mut instrument = Instrument {
@@ -119,7 +120,7 @@ impl FurDecoder {
             ir.instruments.push(instrument);
         }
 
-        let mut patterns: BTreeMap<u8, BTreeMap<u8, Pattern>> = BTreeMap::new();
+        let mut patterns: BTreeMap<u8, BTreeMap<usize, Pattern>> = BTreeMap::new();
         for fur_pattern in &info.patterns {
             let mut data = BTreeMap::new();
             for fur_row in &fur_pattern.data {
@@ -129,18 +130,32 @@ impl FurDecoder {
                     Some(note) => Some(NoteEvent::Start(note - 48)),
                     None => None,
                 };
+                let (effects, control) = parse_effects(&fur_row.effects, &info);
                 let row = PatternRow {
                     note,
                     instrument: fur_row.instrument.map(|i| i as usize),
                     volume: fur_row.volume.map(|v| v as f64 / 15.0),
-                    effects: parse_effects(&fur_row.effects, &info),
+                    effects,
                 };
-                data.insert(fur_row.index as u8, row);
+                data.insert(fur_row.index, row);
+
+                if !control.is_empty() {
+                    for (order, pattern_index) in
+                        info.orders[fur_pattern.channel as usize].iter().enumerate()
+                    {
+                        if *pattern_index == fur_pattern.index as u8 {
+                            ir.control[order]
+                                .entry(fur_row.index)
+                                .or_default()
+                                .extend(control.clone());
+                        }
+                    }
+                }
             }
             patterns
                 .entry(fur_pattern.channel)
                 .or_default()
-                .insert(fur_pattern.index as u8, Pattern { data });
+                .insert(fur_pattern.index as usize, Pattern { data });
         }
 
         for (channel, order) in info.orders.into_iter().enumerate() {
@@ -149,7 +164,7 @@ impl FurDecoder {
                 channel as u8,
                 Channel {
                     patterns: channel_patterns,
-                    order,
+                    order: order.into_iter().map(|o| o as usize).collect(),
                     effects: ChannelEffects::default(),
                 },
             );
@@ -192,54 +207,62 @@ where
     })
 }
 
-fn parse_effects(effects: &[FurEffect], info: &FurInfoBlock) -> Vec<Effect> {
+fn parse_effects(effects: &[FurEffect], info: &FurInfoBlock) -> (Vec<Effect>, Vec<ControlEffect>) {
     assert_eq!(info.linear_pitch, 1);
-    let pitch_slide_speed = info.pitch_slide_speed as i16;
-    effects
-        .iter()
-        .cloned()
-        .flat_map(|e| match e {
-            FurEffect::Arpeggio(x, y) => Some(Effect::Pitch(PitchEffect::Arpeggio(x, y))),
-            FurEffect::PitchSlideUp(speed) => Some(Effect::Pitch(PitchEffect::PitchSlide(
-                speed as i16 * pitch_slide_speed,
+    let pitch_slide_speed = info.pitch_slide_speed as f64 / 128.0;
+    let mut parsed = vec![];
+    let mut control = vec![];
+    for effect in effects.iter().cloned() {
+        match effect {
+            FurEffect::Arpeggio(x, y) => parsed.push(Effect::Pitch(PitchEffect::Arpeggio(x, y))),
+            FurEffect::PitchSlideUp(speed) => parsed.push(Effect::Pitch(PitchEffect::PitchSlide(
+                speed as f64 * pitch_slide_speed,
             ))),
-            FurEffect::PitchSlideDown(speed) => Some(Effect::Pitch(PitchEffect::PitchSlide(
-                speed as i16 * -pitch_slide_speed,
-            ))),
-            FurEffect::Portamento(speed) => Some(Effect::Pitch(PitchEffect::Portamento(
-                speed as i16 * pitch_slide_speed,
+            FurEffect::PitchSlideDown(speed) => parsed.push(Effect::Pitch(
+                PitchEffect::PitchSlide(speed as f64 * -pitch_slide_speed),
+            )),
+            FurEffect::Portamento(speed) => parsed.push(Effect::Pitch(PitchEffect::Portamento(
+                speed as f64 * pitch_slide_speed,
             ))),
             FurEffect::Vibrato(speed, depth) => {
-                Some(Effect::Pitch(PitchEffect::Vibrato(speed, depth)))
+                parsed.push(Effect::Pitch(PitchEffect::Vibrato(speed, depth)))
             }
-            FurEffect::SetPanning(l, r) => Some(Effect::Panning(PanningEffect::SetPanning(
+            FurEffect::SetPanning(l, r) => parsed.push(Effect::Panning(PanningEffect::SetPanning(
                 l as f64 / 15.0,
                 r as f64 / 15.0,
             ))),
-            FurEffect::VolumeSlide(up, down) => Some(Effect::Volume(VolumeEffect::VolumeSlide(
-                (up as i16 - down as i16) as f64 / 64.0,
-            ))),
-            FurEffect::JumpToOrder(o) => Some(Effect::Control(ControlEffect::JumpToOrder(o))),
-            FurEffect::JumpToNextPattern(r) => {
-                Some(Effect::Control(ControlEffect::JumpToNextPattern(r)))
-            }
-            FurEffect::SetVolumeLeft(v) => Some(Effect::Panning(PanningEffect::SetVolumeLeft(
-                v as f64 / 15.0,
-            ))),
-            FurEffect::SetVolumeRight(v) => Some(Effect::Panning(PanningEffect::SetVolumeRight(
-                v as f64 / 15.0,
-            ))),
-            FurEffect::ArpeggioSpeed(s) => Some(Effect::Pitch(PitchEffect::ArpeggioSpeed(s))),
-            FurEffect::NoteCut(ticks) => Some(Effect::Pitch(PitchEffect::NoteCut(ticks))),
-            FurEffect::NoteRelease(ticks) => Some(Effect::Pitch(PitchEffect::NoteRelease(ticks))),
-            FurEffect::SetVirtualTempoNumerator(n) => {
-                Some(Effect::Control(ControlEffect::SetVirtualTempoNumerator(n)))
-            }
-            FurEffect::SetVirtualTempoDenominator(d) => Some(Effect::Control(
-                ControlEffect::SetVirtualTempoDenominator(d),
+            FurEffect::VolumeSlide(up, down) => parsed.push(Effect::Volume(
+                VolumeEffect::VolumeSlide((up as i16 - down as i16) as f64 / 64.0),
             )),
-            FurEffect::StopSong => Some(Effect::Control(ControlEffect::StopSong)),
-            FurEffect::Unknown(_, _) => None,
-        })
-        .collect()
+            FurEffect::JumpToOrder(o) => control.push(ControlEffect::Jump {
+                order: o as usize,
+                row: 0,
+            }),
+            FurEffect::JumpToNextPattern(r) => {
+                control.push(ControlEffect::JumpToNextPattern { row: r as u64 })
+            }
+            FurEffect::SetVolumeLeft(v) => parsed.push(Effect::Panning(
+                PanningEffect::SetVolumeLeft(v as f64 / 15.0),
+            )),
+            FurEffect::SetVolumeRight(v) => parsed.push(Effect::Panning(
+                PanningEffect::SetVolumeRight(v as f64 / 15.0),
+            )),
+            FurEffect::ArpeggioSpeed(s) => {
+                parsed.push(Effect::Pitch(PitchEffect::ArpeggioSpeed(s)))
+            }
+            FurEffect::NoteCut(ticks) => parsed.push(Effect::Pitch(PitchEffect::NoteCut(ticks))),
+            FurEffect::NoteRelease(ticks) => {
+                parsed.push(Effect::Pitch(PitchEffect::NoteRelease(ticks)))
+            }
+            FurEffect::SetVirtualTempoNumerator(n) => {
+                control.push(ControlEffect::SetVirtualTempoNumerator(n))
+            }
+            FurEffect::SetVirtualTempoDenominator(d) => {
+                control.push(ControlEffect::SetVirtualTempoDenominator(d))
+            }
+            FurEffect::StopSong => control.push(ControlEffect::StopSong),
+            FurEffect::Unknown(_, _) => {}
+        }
+    }
+    (parsed, control)
 }

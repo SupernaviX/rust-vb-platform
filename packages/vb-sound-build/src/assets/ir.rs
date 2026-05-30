@@ -8,25 +8,26 @@ use crate::config::ChannelEffects;
 #[derive(Debug)]
 pub struct IrInfo {
     pub name: String,
-    pub pattern_length: u16,
+    pub pattern_length: usize,
     pub ticks_per_second: f32,
     pub ticks_per_row: u8,
     pub virtual_tempo_numerator: u16,
     pub virtual_tempo_denominator: u16,
     pub instruments: Vec<Instrument>,
     pub channels: BTreeMap<u8, Channel>,
+    pub control: Vec<BTreeMap<u64, Vec<ControlEffect>>>,
 }
 
 #[derive(Debug)]
 pub struct Channel {
-    pub patterns: BTreeMap<u8, Pattern>,
-    pub order: Vec<u8>,
+    pub patterns: BTreeMap<usize, Pattern>,
+    pub order: Vec<usize>,
     pub effects: ChannelEffects,
 }
 
 #[derive(Debug)]
 pub struct Pattern {
-    pub data: BTreeMap<u8, PatternRow>,
+    pub data: BTreeMap<u64, PatternRow>,
 }
 
 #[derive(Debug, Clone)]
@@ -49,14 +50,13 @@ pub enum Effect {
     Pitch(PitchEffect),
     Volume(VolumeEffect),
     Panning(PanningEffect),
-    Control(ControlEffect),
 }
 
 #[derive(Debug, Clone)]
 pub enum PitchEffect {
     Arpeggio(u8, u8),
-    PitchSlide(i16),
-    Portamento(i16),
+    PitchSlide(f64),
+    Portamento(f64),
     Vibrato(u8, u8),
     ArpeggioSpeed(u8),
     NoteCut(u8),
@@ -78,8 +78,8 @@ pub enum PanningEffect {
 
 #[derive(Debug, Clone)]
 pub enum ControlEffect {
-    JumpToOrder(u8),
-    JumpToNextPattern(u8),
+    Jump { order: usize, row: u64 },
+    JumpToNextPattern { row: u64 },
     SetVirtualTempoNumerator(u8),
     SetVirtualTempoDenominator(u8),
     StopSong,

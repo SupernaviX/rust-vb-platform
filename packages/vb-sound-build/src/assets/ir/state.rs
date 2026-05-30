@@ -59,7 +59,7 @@ pub fn decode(
 
             let rows_elapsed = row_index - ran_up_to;
             if rows_elapsed > 0 {
-                tick += info.ticks_per_row as u64 * rows_elapsed as u64;
+                tick += info.ticks_per_row as u64 * rows_elapsed;
                 for channel in channels.values_mut() {
                     channel.advance_time(tick, &clock, waveforms)?;
                 }
@@ -67,35 +67,29 @@ pub fn decode(
             ran_up_to = row_index + 1;
 
             let mut next = NextAction::Continue;
-            for (channel_index, row) in rows {
+            for (channel_index, row) in rows.patterns {
                 let channel = channels.get_mut(&channel_index).unwrap();
                 channel.handle_row(&row, &info);
-                for effect in row.effects {
-                    let Effect::Control(effect) = effect else {
-                        continue;
-                    };
-                    match effect {
-                        ControlEffect::JumpToOrder(o) => {
-                            next = next.max(NextAction::Jump {
-                                order: o as usize,
-                                row: 0,
-                            });
-                        }
-                        ControlEffect::JumpToNextPattern(r) => {
-                            next = next.max(NextAction::Jump {
-                                order: order + 1,
-                                row: r as u64,
-                            });
-                        }
-                        ControlEffect::SetVirtualTempoNumerator(n) => {
-                            clock.set_virtual_numerator(tick, n as u16);
-                        }
-                        ControlEffect::SetVirtualTempoDenominator(d) => {
-                            clock.set_virtual_denominator(tick, d as u16);
-                        }
-                        ControlEffect::StopSong => {
-                            next = next.max(NextAction::Stop);
-                        }
+            }
+            for effect in rows.control {
+                match effect {
+                    ControlEffect::Jump { order, row } => {
+                        next = next.max(NextAction::Jump { order, row })
+                    }
+                    ControlEffect::JumpToNextPattern { row } => {
+                        next = next.max(NextAction::Jump {
+                            order: order + 1,
+                            row,
+                        });
+                    }
+                    ControlEffect::SetVirtualTempoNumerator(n) => {
+                        clock.set_virtual_numerator(tick, n as u16);
+                    }
+                    ControlEffect::SetVirtualTempoDenominator(d) => {
+                        clock.set_virtual_denominator(tick, d as u16);
+                    }
+                    ControlEffect::StopSong => {
+                        next = next.max(NextAction::Stop);
                     }
                 }
             }
@@ -108,7 +102,7 @@ pub fn decode(
                 NextAction::Continue => {}
                 NextAction::Jump { order: o, row } => {
                     order = o;
-                    start_row = row as u8;
+                    start_row = row;
                     continue 'outer;
                 }
                 NextAction::Stop => {
@@ -116,8 +110,8 @@ pub fn decode(
                 }
             }
         }
-        if ran_up_to < info.pattern_length as u8 {
-            tick += info.ticks_per_row as u64 * (info.pattern_length as u64 - ran_up_to as u64);
+        if ran_up_to < info.pattern_length as u64 {
+            tick += info.ticks_per_row as u64 * (info.pattern_length as u64 - ran_up_to);
             for channel in channels.values_mut() {
                 channel.advance_time(tick, &clock, waveforms)?;
             }
@@ -140,8 +134,8 @@ pub fn decode(
         .collect())
 }
 
-fn gather_rows(info: &IrInfo, order: usize) -> BTreeMap<u8, Rows> {
-    let mut rows: BTreeMap<u8, Rows> = BTreeMap::new();
+fn gather_rows(info: &IrInfo, order: usize) -> BTreeMap<u64, Rows> {
+    let mut rows: BTreeMap<u64, Rows> = BTreeMap::new();
     for (index, channel) in &info.channels {
         let pattern_index = channel.order[order];
         let Some(pattern) = channel.patterns.get(&pattern_index) else {
@@ -150,13 +144,21 @@ fn gather_rows(info: &IrInfo, order: usize) -> BTreeMap<u8, Rows> {
         for (row_index, row) in &pattern.data {
             rows.entry(*row_index)
                 .or_default()
+                .patterns
                 .push((*index, row.clone()));
         }
+    }
+    for (row_index, effects) in &info.control[order] {
+        rows.entry(*row_index).or_default().control = effects.clone();
     }
     rows
 }
 
-type Rows = Vec<(u8, PatternRow)>;
+#[derive(Default)]
+struct Rows {
+    patterns: Vec<(u8, PatternRow)>,
+    control: Vec<ControlEffect>,
+}
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum NextAction {
@@ -640,27 +642,27 @@ impl PitchCursor {
         }
     }
 
-    fn load_pitch_slide(&mut self, speed: i16) {
-        if speed == 0 {
+    fn load_pitch_slide(&mut self, speed: f64) {
+        if speed == 0.0 {
             self.slide_effect = None;
         } else {
             self.slide_effect = Some(PitchSlide {
-                value: 0,
+                value: 0.0,
                 target: None,
                 speed,
             })
         }
     }
 
-    fn load_portamento(&mut self, speed: i16, next_note: Option<NoteEvent>) {
-        if speed != 0
+    fn load_portamento(&mut self, speed: f64, next_note: Option<NoteEvent>) {
+        if speed != 0.0
             && let (Some(NoteEvent::Start(next)), Some(prev)) = (next_note, self.last_note)
         {
-            let delta = prev as i16 - next as i16;
-            let speed = if delta < 0 { speed } else { -speed };
+            let delta = (prev as f64 - next as f64) / 128.0;
+            let speed = if delta < 0.0 { speed } else { -speed };
             self.slide_effect = Some(PitchSlide {
                 value: delta,
-                target: Some(0),
+                target: Some(0.0),
                 speed,
             })
         } else {
@@ -740,9 +742,9 @@ impl VibratoEffect {
 }
 
 struct PitchSlide {
-    speed: i16,
-    value: i16,
-    target: Option<i16>,
+    speed: f64,
+    value: f64,
+    target: Option<f64>,
 }
 impl PitchSlide {
     fn next(&mut self) -> f64 {
@@ -757,7 +759,7 @@ impl PitchSlide {
             }
         }
         self.value = new_value;
-        result as f64 / 128.0
+        result
     }
 }
 
