@@ -605,6 +605,11 @@ impl PitchCursor {
     }
 
     fn load(&mut self, row: &PatternRow) {
+        let mut new_last_note = self.last_note;
+        if let Some(NoteEvent::Start(note)) = row.note {
+            new_last_note = Some(note);
+            self.slide_effect = None;
+        }
         for effect in &row.effects {
             let Effect::Pitch(effect) = effect else {
                 continue;
@@ -618,7 +623,7 @@ impl PitchCursor {
                     }
                 }
                 PitchEffect::PitchSlide(speed) => self.load_pitch_slide(speed),
-                PitchEffect::Portamento(speed) => self.load_portamento(speed, row.note),
+                PitchEffect::Portamento { note, speed } => self.load_portamento(note, speed),
                 PitchEffect::Vibrato(speed, depth) => {
                     if speed == 0 {
                         self.vibrato_effect = None;
@@ -637,9 +642,7 @@ impl PitchCursor {
             }
         }
         self.note_event = row.note;
-        if let Some(NoteEvent::Start(note)) = self.note_event {
-            self.last_note = Some(note);
-        }
+        self.last_note = new_last_note;
     }
 
     fn load_pitch_slide(&mut self, speed: f64) {
@@ -654,15 +657,22 @@ impl PitchCursor {
         }
     }
 
-    fn load_portamento(&mut self, speed: f64, next_note: Option<NoteEvent>) {
+    fn load_portamento(&mut self, note: u8, speed: f64) {
         if speed != 0.0
-            && let (Some(NoteEvent::Start(next)), Some(prev)) = (next_note, self.last_note)
+            && let Some(prev) = self.last_note
         {
-            let delta = (prev as f64 - next as f64) / 128.0;
-            let speed = if delta < 0.0 { speed } else { -speed };
+            let old_value = self
+                .slide_effect
+                .as_ref()
+                .and_then(|s| s.target)
+                .unwrap_or_default();
+            let start = prev as f64 + old_value;
+            let target = note as f64 - start;
+            let speed = if old_value < target { speed } else { -speed } / 128.0;
+
             self.slide_effect = Some(PitchSlide {
-                value: delta,
-                target: Some(0.0),
+                value: old_value,
+                target: Some(target),
                 speed,
             })
         } else {

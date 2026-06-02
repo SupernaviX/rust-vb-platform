@@ -124,13 +124,13 @@ impl FurDecoder {
         for fur_pattern in &info.patterns {
             let mut data = BTreeMap::new();
             for fur_row in &fur_pattern.data {
-                let note = match fur_row.note {
+                let mut note = match fur_row.note {
                     Some(182 | 181) => Some(NoteEvent::Release),
                     Some(180) => Some(NoteEvent::Stop),
                     Some(note) => Some(NoteEvent::Start(note - 48)),
                     None => None,
                 };
-                let (effects, control) = parse_effects(&fur_row.effects, &info);
+                let (effects, control) = parse_effects(&fur_row.effects, &mut note, &info);
                 let row = PatternRow {
                     note,
                     instrument: fur_row.instrument.map(|i| i as usize),
@@ -207,7 +207,11 @@ where
     })
 }
 
-fn parse_effects(effects: &[FurEffect], info: &FurInfoBlock) -> (Vec<Effect>, Vec<ControlEffect>) {
+fn parse_effects(
+    effects: &[FurEffect],
+    note: &mut Option<NoteEvent>,
+    info: &FurInfoBlock,
+) -> (Vec<Effect>, Vec<ControlEffect>) {
     assert_eq!(info.linear_pitch, 1);
     let pitch_slide_speed = info.pitch_slide_speed as f64 / 128.0;
     let mut parsed = vec![];
@@ -221,9 +225,15 @@ fn parse_effects(effects: &[FurEffect], info: &FurInfoBlock) -> (Vec<Effect>, Ve
             FurEffect::PitchSlideDown(speed) => parsed.push(Effect::Pitch(
                 PitchEffect::PitchSlide(speed as f64 * -pitch_slide_speed),
             )),
-            FurEffect::Portamento(speed) => parsed.push(Effect::Pitch(PitchEffect::Portamento(
-                speed as f64 * pitch_slide_speed,
-            ))),
+            FurEffect::Portamento(speed) => {
+                let Some(NoteEvent::Start(note)) = note.take() else {
+                    continue;
+                };
+                parsed.push(Effect::Pitch(PitchEffect::Portamento {
+                    note,
+                    speed: speed as f64 * pitch_slide_speed,
+                }));
+            }
             FurEffect::Vibrato(speed, depth) => {
                 parsed.push(Effect::Pitch(PitchEffect::Vibrato(speed, depth)))
             }

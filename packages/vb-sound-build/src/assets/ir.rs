@@ -56,7 +56,7 @@ pub enum Effect {
 pub enum PitchEffect {
     Arpeggio(u8, u8),
     PitchSlide(f64),
-    Portamento(f64),
+    Portamento { note: u8, speed: f64 },
     Vibrato(u8, u8),
     ArpeggioSpeed(u8),
     NoteCut(u8),
