@@ -53,6 +53,21 @@ impl BeepBoxDecoder {
         });
     }
 
+    pub fn noise_channel(&mut self, index: u8, source: u8, tap: u8, effects: &ChannelEffects) {
+        self.channels.entry(source).or_default().push(Channel {
+            index,
+            instrument: Instrument {
+                waveform: None,
+                tap: Some(tap),
+                volume_macro: None,
+                arpeggio_macro: None,
+                waveform_macro: None,
+                tap_macro: None,
+            },
+            effects: effects.clone(),
+        });
+    }
+
     pub fn decode(self, waveforms: &mut WaveformSetData) -> Result<Vec<ChannelData>> {
         let bytes = fs::read(&self.file)
             .map_err(|e| anyhow!("could not read beepbox from {}: {}", self.file.display(), e))?;
@@ -86,7 +101,7 @@ impl BeepBoxDecoder {
                     },
                 );
                 for (index, raw) in raw_channel.patterns.iter().enumerate() {
-                    let pattern = parse_pattern(&song, raw, instrument);
+                    let pattern = parse_pattern(&song, raw_channel.type_, raw, instrument);
                     patterns.insert(index + 1, pattern);
                 }
 
@@ -123,12 +138,20 @@ impl BeepBoxDecoder {
     }
 }
 
-fn parse_pattern(song: &BeepBoxJson, raw: &BeepBoxPattern, instrument: usize) -> Pattern {
+fn parse_pattern(
+    song: &BeepBoxJson,
+    type_: BeepBoxChannelType,
+    raw: &BeepBoxPattern,
+    instrument: usize,
+) -> Pattern {
     let mut pattern = Pattern {
         data: BTreeMap::new(),
     };
     for note in &raw.notes {
-        let pitch = note.pitches[0] + song.key.to_pitch();
+        let pitch = match type_ {
+            BeepBoxChannelType::Pitch => note.pitches[0] + song.key.to_pitch(),
+            BeepBoxChannelType::Drum => note.pitches[0] + song.key.to_pitch() + 69,
+        };
         let Some((start, rest)) = note.points.split_first() else {
             continue;
         };
@@ -241,8 +264,17 @@ impl BeepBoxKey {
 
 #[derive(Deserialize)]
 struct BeepBoxChannel {
+    #[serde(rename = "type")]
+    type_: BeepBoxChannelType,
     patterns: Vec<BeepBoxPattern>,
     sequence: Vec<usize>,
+}
+
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+enum BeepBoxChannelType {
+    Pitch,
+    Drum,
 }
 
 #[derive(Deserialize)]

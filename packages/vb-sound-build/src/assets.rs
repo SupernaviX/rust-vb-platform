@@ -94,6 +94,8 @@ pub fn process(assets: RawAssets) -> Result<Assets> {
                     .get(&waveform_name)
                     .unwrap_or_else(|| panic!("Unrecognized waveform \"{waveform_name}\""));
                 decoder.pcm_channel(index, channel.source, *waveform, &channel.effects);
+            } else if let Some(tap) = channel.tap {
+                decoder.noise_channel(index, channel.source, tap, &channel.effects);
             }
         }
         for channel in decoder.decode(&mut waveforms)? {
