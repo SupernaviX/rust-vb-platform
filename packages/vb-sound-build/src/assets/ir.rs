@@ -25,12 +25,12 @@ pub struct Channel {
     pub effects: ChannelEffects,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Pattern {
     pub data: BTreeMap<u64, PatternRow>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PatternRow {
     pub note: Option<NoteEvent>,
     pub instrument: Option<usize>,
@@ -66,6 +66,7 @@ pub enum PitchEffect {
 #[derive(Debug, Clone)]
 pub enum VolumeEffect {
     VolumeSlide(f64),
+    VolumePortamento { target: f64, speed: f64 },
 }
 
 #[allow(clippy::enum_variant_names)]
@@ -85,15 +86,17 @@ pub enum ControlEffect {
     StopSong,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Instrument {
     pub waveform: Option<[u8; 32]>,
+    pub tap: Option<u8>,
     pub volume_macro: Option<InstrumentMacro<f64>>,
     pub arpeggio_macro: Option<InstrumentMacro<i8>>,
     pub waveform_macro: Option<InstrumentMacro<[u8; 32]>>,
+    pub tap_macro: Option<InstrumentMacro<u8>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct InstrumentMacro<T> {
     pub macro_loop: i8,
     pub macro_release: i8,

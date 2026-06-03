@@ -86,9 +86,11 @@ impl FurDecoder {
         for raw_instrument in &info.instruments {
             let mut instrument = Instrument {
                 waveform: None,
+                tap: None,
                 volume_macro: None,
                 arpeggio_macro: None,
                 waveform_macro: None,
+                tap_macro: None,
             };
             for feature in &raw_instrument.features {
                 match feature {
@@ -110,6 +112,10 @@ impl FurDecoder {
                                     let m = parse_macro(mb, |i| load_waveform(&info, *i as usize))?;
                                     instrument.waveform_macro = Some(m);
                                 }
+                                FurMacro::Duty(mb) => {
+                                    let m = parse_macro(mb, |i| Ok(*i))?;
+                                    instrument.tap_macro = Some(m);
+                                }
                                 _ => {}
                             }
                         }
@@ -130,7 +136,9 @@ impl FurDecoder {
                     Some(note) => Some(NoteEvent::Start(note - 48)),
                     None => None,
                 };
-                let (effects, control) = parse_effects(&fur_row.effects, &mut note, &info);
+                let mut volume = fur_row.volume.map(|v| v as f64 / 15.0);
+                let (effects, control) =
+                    parse_effects(&fur_row.effects, &mut note, &mut volume, &info);
                 let row = PatternRow {
                     note,
                     instrument: fur_row.instrument.map(|i| i as usize),
@@ -210,6 +218,7 @@ where
 fn parse_effects(
     effects: &[FurEffect],
     note: &mut Option<NoteEvent>,
+    volume: &mut Option<f64>,
     info: &FurInfoBlock,
 ) -> (Vec<Effect>, Vec<ControlEffect>) {
     assert_eq!(info.linear_pitch, 1);
@@ -257,6 +266,15 @@ fn parse_effects(
             FurEffect::SetVolumeRight(v) => parsed.push(Effect::Panning(
                 PanningEffect::SetVolumeRight(v as f64 / 15.0),
             )),
+            FurEffect::VolumePortamento(speed) => {
+                let Some(target) = volume.take() else {
+                    continue;
+                };
+                parsed.push(Effect::Volume(VolumeEffect::VolumePortamento {
+                    target,
+                    speed: speed as f64 * pitch_slide_speed,
+                }));
+            }
             FurEffect::ArpeggioSpeed(s) => {
                 parsed.push(Effect::Pitch(PitchEffect::ArpeggioSpeed(s)))
             }

@@ -28,12 +28,7 @@ pub fn decode(
         let channel = Channel::new(*i as usize, c.effects.clone());
         channels.insert(*i, channel);
     }
-    let orders_length = info
-        .channels
-        .values()
-        .map(|c| c.order.len())
-        .max()
-        .unwrap_or_default();
+    let orders_length = info.control.len();
     let mut orders_seen = HashSet::new();
     let mut order = 0;
 
@@ -310,6 +305,7 @@ struct ChannelState {
     volume: VolumeCursor,
     pitch: PitchCursor,
     waveform: WaveformCursor,
+    tap: TapCursor,
     empty: bool,
 }
 impl ChannelState {
@@ -319,6 +315,7 @@ impl ChannelState {
             volume: VolumeCursor::new(),
             pitch: PitchCursor::new(),
             waveform: WaveformCursor::new(),
+            tap: TapCursor::new(),
             empty: true,
         }
     }
@@ -332,6 +329,7 @@ impl ChannelState {
                     self.volume.release_macros();
                     self.pitch.release_macros();
                     self.waveform.release_macros();
+                    self.tap.release_macros();
                 }
                 Some(NoteEvent::Start(_)) => {
                     self.empty = false;
@@ -343,6 +341,7 @@ impl ChannelState {
                 envelope: self.volume.next(),
                 pitch_shift: self.pitch.next_shift(),
                 waveform: self.waveform.next(),
+                tap: self.tap.next(),
                 note_event,
             });
         }
@@ -358,6 +357,7 @@ impl ChannelState {
             self.volume.load_instrument(instr);
             self.waveform.load_instrument(instr);
             self.pitch.load_instrument(instr);
+            self.tap.load_instrument(instr);
         }
         for effect in &row.effects {
             if let Effect::Volume(e) = effect {
@@ -377,6 +377,7 @@ pub struct ChannelUpdate {
     envelope: Option<f64>,
     pitch_shift: f64,
     waveform: Option<[u8; 32]>,
+    tap: Option<u8>,
     note_event: Option<NoteEvent>,
 }
 impl ChannelUpdate {
@@ -394,6 +395,9 @@ impl ChannelUpdate {
             let index = waveforms.add_waveform(waveform)?;
             player.set_waveform(index);
         }
+        if let Some(tap) = self.tap {
+            player.set_tap(tap);
+        }
         match self.note_event {
             Some(NoteEvent::Start(key)) => {
                 player.start_note(key);
@@ -408,9 +412,10 @@ impl ChannelUpdate {
     }
 }
 
+#[derive(Debug)]
 struct VolumeCursor {
     value: Option<f64>,
-    fixed: Option<f64>,
+    target: Option<f64>,
     instrument: Option<MacroCursor<f64>>,
     slide_speed: Option<f64>,
 }
@@ -418,39 +423,36 @@ impl VolumeCursor {
     fn new() -> Self {
         Self {
             value: None,
-            fixed: None,
+            target: None,
             instrument: None,
             slide_speed: None,
         }
     }
 
     fn next(&mut self) -> Option<f64> {
-        let mut target = self.value;
+        let mut target = self.target;
         if let Some(ins) = self.instrument.as_mut().and_then(|i| i.next()) {
-            let mut new_target = ins;
-            if let Some(fixed) = self.fixed {
-                new_target *= fixed;
-            }
-            target = Some(new_target);
-        } else if let Some(fixed) = self.fixed {
-            target = Some(fixed);
+            target = target.or(Some(1.0)).map(|t| t * ins);
         }
-        let target = target?;
         if let Some(slide_speed) = self.slide_speed {
             let value = self.value.unwrap_or(1.0);
             if slide_speed > 0.0 {
+                let target = target.unwrap_or(1.0);
                 self.value = Some(target.min(value + slide_speed))
             } else {
+                let target = target.unwrap_or(0.0);
                 self.value = Some(target.max(value + slide_speed))
             }
         } else {
-            self.value = Some(target);
+            self.value = target;
         }
         self.value
     }
 
     fn set(&mut self, value: f64) {
-        self.fixed = Some(value);
+        self.value = Some(value);
+        self.target = Some(value);
+        self.slide_speed = None;
     }
 
     fn load_instrument(&mut self, instr: &Instrument) {
@@ -464,7 +466,18 @@ impl VolumeCursor {
                     self.slide_speed = None;
                 } else {
                     self.slide_speed = Some(*speed);
-                    self.fixed = None;
+                    self.target = None;
+                }
+            }
+            VolumeEffect::VolumePortamento { target, speed } => {
+                self.target = Some(*target);
+                self.slide_speed = Some(*speed);
+                if *speed == 0.0 {
+                    self.value = Some(*target);
+                } else if self.value.is_some_and(|v| v > *target) {
+                    self.slide_speed = Some(-*speed);
+                } else {
+                    self.slide_speed = Some(*speed);
                 }
             }
         }
@@ -529,6 +542,38 @@ impl WaveformCursor {
     fn load_instrument(&mut self, instr: &Instrument) {
         self.value = instr.waveform;
         self.instrument = instr.waveform_macro.as_ref().map(MacroCursor::load);
+    }
+
+    fn release_macros(&mut self) {
+        if let Some(ins) = self.instrument.as_mut() {
+            ins.release();
+        }
+    }
+}
+
+struct TapCursor {
+    value: Option<u8>,
+    instrument: Option<MacroCursor<u8>>,
+}
+impl TapCursor {
+    fn new() -> Self {
+        Self {
+            value: None,
+            instrument: None,
+        }
+    }
+
+    fn next(&mut self) -> Option<u8> {
+        if let Some(tap) = self.instrument.as_mut().and_then(|i| i.next()) {
+            Some(tap)
+        } else {
+            self.value.take()
+        }
+    }
+
+    fn load_instrument(&mut self, instr: &Instrument) {
+        self.value = instr.tap;
+        self.instrument = instr.tap_macro.as_ref().map(MacroCursor::load);
     }
 
     fn release_macros(&mut self) {
@@ -668,13 +713,13 @@ impl PitchCursor {
                 .unwrap_or_default();
             let start = prev as f64 + old_value;
             let target = note as f64 - start;
-            let speed = if old_value < target { speed } else { -speed } / 128.0;
+            let speed = if old_value < target { speed } else { -speed };
 
             self.slide_effect = Some(PitchSlide {
                 value: old_value,
                 target: Some(target),
                 speed,
-            })
+            });
         } else {
             self.slide_effect = None;
         }
@@ -751,6 +796,7 @@ impl VibratoEffect {
     }
 }
 
+#[derive(Debug)]
 struct PitchSlide {
     speed: f64,
     value: f64,

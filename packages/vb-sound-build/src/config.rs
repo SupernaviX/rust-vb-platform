@@ -70,6 +70,8 @@ struct RawAssetFile {
     pub midis: BTreeMap<String, RawMidi>,
     #[serde(rename = "fur", default)]
     pub furs: BTreeMap<String, RawFur>,
+    #[serde(default)]
+    pub beepbox: BTreeMap<String, RawBeepBox>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -135,7 +137,8 @@ impl RawFur {
 
 #[derive(Deserialize, Debug)]
 pub struct RawChannel {
-    pub channel: u8,
+    #[serde(alias = "channel")]
+    pub source: u8,
     pub waveform: Option<String>,
     pub tap: Option<u8>,
     #[serde(flatten, default)]
@@ -164,11 +167,29 @@ impl Default for ChannelEffects {
     }
 }
 
+#[derive(Deserialize, Debug)]
+pub struct RawBeepBox {
+    pub file: PathBuf,
+    #[serde(rename = "channel", default)]
+    pub channels: BTreeMap<u8, RawChannel>,
+    #[serde(default)]
+    pub fixed_waveforms: Vec<String>,
+}
+impl RawBeepBox {
+    fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
+        Self {
+            file: opts.input_path(&dir.join(self.file)),
+            ..self
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct RawAssets {
     pub waveforms: BTreeMap<String, RawWaveform>,
     pub midis: BTreeMap<String, RawMidi>,
     pub furs: BTreeMap<String, RawFur>,
+    pub beepbox: BTreeMap<String, RawBeepBox>,
 }
 
 pub fn parse(opts: &mut Options) -> Result<RawAssets> {
@@ -176,6 +197,7 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
         waveforms: BTreeMap::new(),
         midis: BTreeMap::new(),
         furs: BTreeMap::new(),
+        beepbox: BTreeMap::new(),
     };
     let mut files = vec![opts.config_file_path()];
     while let Some(path) = files.pop() {
@@ -202,6 +224,10 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
 
         for (name, fur) in file.furs {
             assets.furs.insert(name, fur.fix_files(opts, dir));
+        }
+
+        for (name, beepbox) in file.beepbox {
+            assets.beepbox.insert(name, beepbox.fix_files(opts, dir));
         }
     }
     Ok(assets)

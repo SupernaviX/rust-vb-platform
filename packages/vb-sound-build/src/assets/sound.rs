@@ -133,7 +133,7 @@ impl ChannelPlayer {
     }
 
     pub fn set_tap(&mut self, tap: u8) {
-        self.noise = true;
+        self.noise = self.use_interval;
         if self.last_tap != Some(tap) {
             self.current_row().tap = Some(tap);
             self.last_tap = Some(tap);
@@ -151,8 +151,10 @@ impl ChannelPlayer {
             key = (key as u16 * 3 / 4) as u8;
         }
         if self.last_key != Some(key) || self.stale_key {
-            let frequency =
-                key_to_clocks(key, self.effects.shift + self.pitch_shift).expect("note is too low");
+            let shift = self.effects.shift + self.pitch_shift;
+            let Some(frequency) = key_to_clocks(key, shift) else {
+                panic!("note {key} (with shift {shift}) is too low");
+            };
             self.current_row().frequency = Some(frequency);
             self.last_key = Some(key);
             self.stale_key = false;
@@ -186,8 +188,10 @@ impl ChannelPlayer {
         if self.pitch_shift != shift {
             self.pitch_shift = shift;
             if let Some(key) = self.last_key {
-                let frequency = key_to_clocks(key, self.effects.shift + self.pitch_shift)
-                    .expect("note is too low");
+                let shift = self.effects.shift + self.pitch_shift;
+                let Some(frequency) = key_to_clocks(key, shift) else {
+                    panic!("note {key} (with shift {shift}) is too low");
+                };
                 self.current_row().frequency = Some(frequency);
             }
         }
@@ -243,9 +247,7 @@ pub struct ChannelBuilder {
 impl ChannelBuilder {
     pub fn build(self) -> ChannelData {
         let mut encoder = EventEncoder::new();
-        println!("{}:", self.name);
         for event in self.player.finish() {
-            println!("  {event:?}");
             encoder.encode(event);
         }
         ChannelData {

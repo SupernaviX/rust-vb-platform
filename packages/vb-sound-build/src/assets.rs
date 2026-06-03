@@ -1,3 +1,4 @@
+mod beepbox;
 mod fur;
 mod ir;
 mod midi;
@@ -8,7 +9,7 @@ use std::collections::{BTreeMap, HashMap};
 use anyhow::{Result, bail};
 
 use crate::{
-    assets::{fur::FurDecoder, midi::MidiDecoder},
+    assets::{beepbox::BeepBoxDecoder, fur::FurDecoder, midi::MidiDecoder},
     config::RawAssets,
 };
 
@@ -67,12 +68,35 @@ pub fn process(assets: RawAssets) -> Result<Assets> {
                     .get(&waveform_name)
                     .unwrap_or_else(|| panic!("Unrecognized waveform \"{waveform_name}\""));
                 let index = waveforms.add_waveform(*waveform)?;
-                decoder.pcm_channel(&name, channel.channel, index, &channel.effects);
+                decoder.pcm_channel(&name, channel.source, index, &channel.effects);
             } else if let Some(tap) = channel.tap {
-                decoder.noise_channel(&name, channel.channel, tap, &channel.effects);
+                decoder.noise_channel(&name, channel.source, tap, &channel.effects);
             }
         }
         for channel in decoder.decode()? {
+            channels.push(channel);
+        }
+        waveform_sets.push(waveforms);
+    }
+    for (name, beepbox) in assets.beepbox {
+        let mut decoder = BeepBoxDecoder::new(&name, &beepbox.file);
+        let mut waveforms = WaveformSetData::new(name);
+        for waveform_name in &beepbox.fixed_waveforms {
+            let waveform = named_waveforms
+                .get(waveform_name)
+                .copied()
+                .unwrap_or_else(|| panic!("Unrecognized waveform \"{waveform_name}\""));
+            waveforms.add_waveform(waveform)?;
+        }
+        for (index, channel) in beepbox.channels {
+            if let Some(waveform_name) = channel.waveform {
+                let waveform = named_waveforms
+                    .get(&waveform_name)
+                    .unwrap_or_else(|| panic!("Unrecognized waveform \"{waveform_name}\""));
+                decoder.pcm_channel(index, channel.source, *waveform, &channel.effects);
+            }
+        }
+        for channel in decoder.decode(&mut waveforms)? {
             channels.push(channel);
         }
         waveform_sets.push(waveforms);
