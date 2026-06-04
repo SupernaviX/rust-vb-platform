@@ -8,7 +8,7 @@ use crate::{
     assets::{
         ChannelData, WaveformSetData,
         ir::{
-            self, ControlEffect, Effect, Instrument, IrInfo, NoteEvent, Pattern, PatternRow,
+            self, ControlEffect, Effect, Instrument, IrInfo, NoteEvent, Pattern, PatternTick,
             PitchEffect, VolumeEffect,
         },
     },
@@ -78,9 +78,8 @@ impl BeepBoxDecoder {
             song.beats_per_minute as f32 * song.ticks_per_beat as f32 * 12.0 / 60.0;
         let mut ir = IrInfo {
             name: self.name,
-            pattern_length: song.beats_per_bar as usize * song.ticks_per_beat as usize * 12,
+            pattern_length: song.beats_per_bar as u64 * song.ticks_per_beat as u64 * 12,
             ticks_per_second,
-            ticks_per_row: 1,
             virtual_tempo_numerator: 1,
             virtual_tempo_denominator: 1,
             instruments: vec![],
@@ -116,23 +115,21 @@ impl BeepBoxDecoder {
             }
         }
 
-        let end_index = ir.pattern_length as u64 - song.ticks_per_beat as u64;
-        let end_effect = if song.loop_bars > 0 {
-            ControlEffect::Jump {
+        if song.loop_bars > 0 {
+            let end_index = ir.pattern_length - song.ticks_per_beat as u64;
+            let end_effect = ControlEffect::Jump {
                 order: song.intro_bars,
-                row: 0,
+                tick: 0,
+            };
+            if let Some(end) = ir.control.last_mut() {
+                end.entry(end_index).or_default().push(end_effect);
+            } else {
+                ir.control
+                    .push_mut(BTreeMap::new())
+                    .entry(end_index)
+                    .or_default()
+                    .push(end_effect);
             }
-        } else {
-            ControlEffect::StopSong
-        };
-        if let Some(end) = ir.control.last_mut() {
-            end.entry(end_index).or_default().push(end_effect);
-        } else {
-            ir.control
-                .push_mut(BTreeMap::new())
-                .entry(end_index)
-                .or_default()
-                .push(end_effect);
         }
         ir::decode(ir, waveforms, false)
     }
@@ -157,7 +154,7 @@ fn parse_pattern(
         };
         pattern.data.insert(
             (start.tick * 12.0).round() as u64,
-            PatternRow {
+            PatternTick {
                 note: Some(NoteEvent::Start(pitch)),
                 instrument: Some(instrument),
                 volume: Some(start.volume as f64 / 100.0),

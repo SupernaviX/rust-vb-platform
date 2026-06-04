@@ -8,9 +8,8 @@ use crate::config::ChannelEffects;
 #[derive(Debug)]
 pub struct IrInfo {
     pub name: String,
-    pub pattern_length: usize,
+    pub pattern_length: u64,
     pub ticks_per_second: f32,
-    pub ticks_per_row: u8,
     pub virtual_tempo_numerator: u16,
     pub virtual_tempo_denominator: u16,
     pub instruments: Vec<Instrument>,
@@ -27,11 +26,11 @@ pub struct Channel {
 
 #[derive(Debug, Clone)]
 pub struct Pattern {
-    pub data: BTreeMap<u64, PatternRow>,
+    pub data: BTreeMap<u64, PatternTick>,
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct PatternRow {
+pub struct PatternTick {
     pub note: Option<NoteEvent>,
     pub instrument: Option<usize>,
     pub volume: Option<f64>,
@@ -79,8 +78,8 @@ pub enum PanningEffect {
 
 #[derive(Debug, Clone)]
 pub enum ControlEffect {
-    Jump { order: usize, row: u64 },
-    JumpToNextPattern { row: u64 },
+    Jump { order: usize, tick: u64 },
+    JumpToNextPattern { tick: u64 },
     SetVirtualTempoNumerator(u8),
     SetVirtualTempoDenominator(u8),
     StopSong,

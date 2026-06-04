@@ -14,12 +14,12 @@ use crate::{
     assets::{
         ChannelData, WaveformSetData,
         fur::parser::{
-            FurEffect, FurFeature, FurHeader, FurInfoBlock, FurMacro, FurMacroBody,
+            FurEffect, FurFeature, FurHeader, FurInfoBlock, FurMacro, FurMacroBody, FurPatternRow,
             FurWavetableFile,
         },
         ir::{
             self, Channel, ControlEffect, Effect, Instrument, InstrumentMacro, IrInfo, NoteEvent,
-            PanningEffect, Pattern, PatternRow, PitchEffect, VolumeEffect,
+            PanningEffect, Pattern, PatternTick, PitchEffect, VolumeEffect,
         },
     },
     config::ChannelEffects,
@@ -74,8 +74,7 @@ impl FurDecoder {
         } = self;
         let mut ir = IrInfo {
             name,
-            pattern_length: info.pattern_length as usize,
-            ticks_per_row: info.speed_1,
+            pattern_length: info.pattern_length as u64 * info.speed_1 as u64,
             ticks_per_second: info.ticks_per_second,
             virtual_tempo_numerator: info.virtual_tempo_numerator,
             virtual_tempo_denominator: info.virtual_tempo_denominator,
@@ -129,33 +128,18 @@ impl FurDecoder {
         let mut patterns: BTreeMap<u8, BTreeMap<usize, Pattern>> = BTreeMap::new();
         for fur_pattern in &info.patterns {
             let mut data = BTreeMap::new();
-            for fur_row in &fur_pattern.data {
-                let mut note = match fur_row.note {
-                    Some(182 | 181) => Some(NoteEvent::Release),
-                    Some(180) => Some(NoteEvent::Stop),
-                    Some(note) => Some(NoteEvent::Start(note - 48)),
-                    None => None,
-                };
-                let mut volume = fur_row.volume.map(|v| v as f64 / 15.0);
-                let (effects, control) =
-                    parse_effects(&fur_row.effects, &mut note, &mut volume, &info);
-                let row = PatternRow {
-                    note,
-                    instrument: fur_row.instrument.map(|i| i as usize),
-                    volume: fur_row.volume.map(|v| v as f64 / 15.0),
-                    effects,
-                };
-                data.insert(fur_row.index, row);
-
+            for row in &fur_pattern.data {
+                let control = parse_row(row, &info, &mut data);
                 if !control.is_empty() {
                     for (order, pattern_index) in
                         info.orders[fur_pattern.channel as usize].iter().enumerate()
                     {
-                        if *pattern_index == fur_pattern.index as u8 {
-                            ir.control[order]
-                                .entry(fur_row.index)
-                                .or_default()
-                                .extend(control.clone());
+                        if *pattern_index != fur_pattern.index as u8 {
+                            continue;
+                        }
+                        let effects = &mut ir.control[order];
+                        for (tick, effect) in &control {
+                            effects.entry(*tick).or_default().push(effect.clone());
                         }
                     }
                 }
@@ -215,17 +199,31 @@ where
     })
 }
 
-fn parse_effects(
-    effects: &[FurEffect],
-    note: &mut Option<NoteEvent>,
-    volume: &mut Option<f64>,
+fn parse_row(
+    row: &FurPatternRow,
     info: &FurInfoBlock,
-) -> (Vec<Effect>, Vec<ControlEffect>) {
+    ticks: &mut BTreeMap<u64, PatternTick>,
+) -> Vec<(u64, ControlEffect)> {
     assert_eq!(info.linear_pitch, 1);
     let pitch_slide_speed = info.pitch_slide_speed as f64 / 128.0;
-    let mut parsed = vec![];
+    let ticks_per_row = info.speed_1 as u64;
+
+    let first_tick = row.index * ticks_per_row;
+    let last_tick = first_tick + ticks_per_row - 1;
+    let mut tick = PatternTick {
+        note: match row.note {
+            Some(182 | 181) => Some(NoteEvent::Release),
+            Some(180) => Some(NoteEvent::Stop),
+            Some(note) => Some(NoteEvent::Start(note - 48)),
+            None => None,
+        },
+        instrument: row.instrument.map(|i| i as usize),
+        volume: row.volume.map(|v| v as f64 / 15.0),
+        effects: vec![],
+    };
+    let parsed = &mut tick.effects;
     let mut control = vec![];
-    for effect in effects.iter().cloned() {
+    for effect in row.effects.iter().cloned() {
         match effect {
             FurEffect::Arpeggio(x, y) => parsed.push(Effect::Pitch(PitchEffect::Arpeggio(x, y))),
             FurEffect::PitchSlideUp(speed) => parsed.push(Effect::Pitch(PitchEffect::PitchSlide(
@@ -235,7 +233,7 @@ fn parse_effects(
                 PitchEffect::PitchSlide(speed as f64 * -pitch_slide_speed),
             )),
             FurEffect::Portamento(speed) => {
-                let Some(NoteEvent::Start(note)) = note.take() else {
+                let Some(NoteEvent::Start(note)) = tick.note.take() else {
                     continue;
                 };
                 parsed.push(Effect::Pitch(PitchEffect::Portamento {
@@ -253,13 +251,17 @@ fn parse_effects(
             FurEffect::VolumeSlide(up, down) => parsed.push(Effect::Volume(
                 VolumeEffect::VolumeSlide((up as i16 - down as i16) as f64 / 64.0),
             )),
-            FurEffect::JumpToOrder(o) => control.push(ControlEffect::Jump {
-                order: o as usize,
-                row: 0,
-            }),
-            FurEffect::JumpToNextPattern(r) => {
-                control.push(ControlEffect::JumpToNextPattern { row: r as u64 })
-            }
+            FurEffect::JumpToOrder(o) => control.push((
+                last_tick,
+                ControlEffect::Jump {
+                    order: o as usize,
+                    tick: 0,
+                },
+            )),
+            FurEffect::JumpToNextPattern(t) => control.push((
+                last_tick,
+                ControlEffect::JumpToNextPattern { tick: t as u64 },
+            )),
             FurEffect::SetVolumeLeft(v) => parsed.push(Effect::Panning(
                 PanningEffect::SetVolumeLeft(v as f64 / 15.0),
             )),
@@ -267,7 +269,7 @@ fn parse_effects(
                 PanningEffect::SetVolumeRight(v as f64 / 15.0),
             )),
             FurEffect::VolumePortamento(speed) => {
-                let Some(target) = volume.take() else {
+                let Some(target) = tick.volume.take() else {
                     continue;
                 };
                 parsed.push(Effect::Volume(VolumeEffect::VolumePortamento {
@@ -276,21 +278,28 @@ fn parse_effects(
                 }));
             }
             FurEffect::ArpeggioSpeed(s) => {
-                parsed.push(Effect::Pitch(PitchEffect::ArpeggioSpeed(s)))
+                parsed.push(Effect::Pitch(PitchEffect::ArpeggioSpeed(s)));
             }
             FurEffect::NoteCut(ticks) => parsed.push(Effect::Pitch(PitchEffect::NoteCut(ticks))),
             FurEffect::NoteRelease(ticks) => {
-                parsed.push(Effect::Pitch(PitchEffect::NoteRelease(ticks)))
+                parsed.push(Effect::Pitch(PitchEffect::NoteRelease(ticks)));
             }
             FurEffect::SetVirtualTempoNumerator(n) => {
-                control.push(ControlEffect::SetVirtualTempoNumerator(n))
+                control.push((last_tick, ControlEffect::SetVirtualTempoNumerator(n)));
             }
             FurEffect::SetVirtualTempoDenominator(d) => {
-                control.push(ControlEffect::SetVirtualTempoDenominator(d))
+                control.push((last_tick, ControlEffect::SetVirtualTempoDenominator(d)));
             }
-            FurEffect::StopSong => control.push(ControlEffect::StopSong),
+            FurEffect::StopSong => control.push((last_tick, ControlEffect::StopSong)),
             FurEffect::Unknown(_, _) => {}
         }
     }
-    (parsed, control)
+    if tick.note.is_some()
+        || tick.instrument.is_some()
+        || tick.volume.is_some()
+        || !tick.effects.is_empty()
+    {
+        ticks.insert(first_tick, tick);
+    }
+    control
 }

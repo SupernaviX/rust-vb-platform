@@ -10,7 +10,7 @@ use crate::{
         ChannelData, WaveformSetData,
         ir::{
             ControlEffect, Effect, Instrument, InstrumentMacro, IrInfo, NoteEvent, PanningEffect,
-            PatternRow, PitchEffect, VolumeEffect,
+            PatternTick, PitchEffect, VolumeEffect,
         },
         sound::{ChannelBuilder, ChannelPlayer, Moment},
     },
@@ -32,7 +32,7 @@ pub fn decode(
     let mut orders_seen = HashSet::new();
     let mut order = 0;
 
-    let mut start_row = 0;
+    let mut start_tick = 0;
     let mut tick = 0;
     'outer: loop {
         if !orders_seen.insert(order) {
@@ -44,37 +44,37 @@ pub fn decode(
         for channel in channels.values_mut() {
             channel.start_pattern(order);
         }
-        let start = start_row;
+        let start = start_tick;
         let mut ran_up_to = start;
-        start_row = 0;
-        for (row_index, rows) in gather_rows(&info, order) {
-            if row_index < start {
+        start_tick = 0;
+        for (tick_index, updates) in gather_tick_updates(&info, order) {
+            if tick_index < start {
                 continue;
             }
 
-            let rows_elapsed = row_index - ran_up_to;
-            if rows_elapsed > 0 {
-                tick += info.ticks_per_row as u64 * rows_elapsed;
+            let ticks_elapsed = tick_index - ran_up_to;
+            if ticks_elapsed > 0 {
+                tick += ticks_elapsed;
                 for channel in channels.values_mut() {
                     channel.advance_time(tick, &clock, waveforms)?;
                 }
             }
-            ran_up_to = row_index + 1;
+            ran_up_to = tick_index + 1;
 
             let mut next = NextAction::Continue;
-            for (channel_index, row) in rows.patterns {
+            for (channel_index, tick) in updates.patterns {
                 let channel = channels.get_mut(&channel_index).unwrap();
-                channel.handle_row(&row, &info);
+                channel.handle_tick(&tick, &info);
             }
-            for effect in rows.control {
+            for effect in updates.control {
                 match effect {
-                    ControlEffect::Jump { order, row } => {
-                        next = next.max(NextAction::Jump { order, row })
+                    ControlEffect::Jump { order, tick } => {
+                        next = next.max(NextAction::Jump { order, tick })
                     }
-                    ControlEffect::JumpToNextPattern { row } => {
+                    ControlEffect::JumpToNextPattern { tick } => {
                         next = next.max(NextAction::Jump {
                             order: order + 1,
-                            row,
+                            tick,
                         });
                     }
                     ControlEffect::SetVirtualTempoNumerator(n) => {
@@ -88,16 +88,16 @@ pub fn decode(
                     }
                 }
             }
-            tick += info.ticks_per_row as u64;
+            tick += 1;
             for channel in channels.values_mut() {
                 channel.advance_time(tick, &clock, waveforms)?;
             }
 
             match next {
                 NextAction::Continue => {}
-                NextAction::Jump { order: o, row } => {
+                NextAction::Jump { order: o, tick } => {
                     order = o;
-                    start_row = row;
+                    start_tick = tick;
                     continue 'outer;
                 }
                 NextAction::Stop => {
@@ -105,8 +105,8 @@ pub fn decode(
                 }
             }
         }
-        if ran_up_to < info.pattern_length as u64 {
-            tick += info.ticks_per_row as u64 * (info.pattern_length as u64 - ran_up_to);
+        if ran_up_to < info.pattern_length {
+            tick += info.pattern_length - ran_up_to;
             for channel in channels.values_mut() {
                 channel.advance_time(tick, &clock, waveforms)?;
             }
@@ -129,36 +129,37 @@ pub fn decode(
         .collect())
 }
 
-fn gather_rows(info: &IrInfo, order: usize) -> BTreeMap<u64, Rows> {
-    let mut rows: BTreeMap<u64, Rows> = BTreeMap::new();
+fn gather_tick_updates(info: &IrInfo, order: usize) -> BTreeMap<u64, TickUpdates> {
+    let mut updates: BTreeMap<u64, TickUpdates> = BTreeMap::new();
     for (index, channel) in &info.channels {
         let pattern_index = channel.order[order];
         let Some(pattern) = channel.patterns.get(&pattern_index) else {
             panic!("unrecognized pattern {pattern_index} in channel {index}");
         };
-        for (row_index, row) in &pattern.data {
-            rows.entry(*row_index)
+        for (tick_index, tick) in &pattern.data {
+            updates
+                .entry(*tick_index)
                 .or_default()
                 .patterns
-                .push((*index, row.clone()));
+                .push((*index, tick.clone()));
         }
     }
-    for (row_index, effects) in &info.control[order] {
-        rows.entry(*row_index).or_default().control = effects.clone();
+    for (tick_index, effects) in &info.control[order] {
+        updates.entry(*tick_index).or_default().control = effects.clone();
     }
-    rows
+    updates
 }
 
 #[derive(Default)]
-struct Rows {
-    patterns: Vec<(u8, PatternRow)>,
+struct TickUpdates {
+    patterns: Vec<(u8, PatternTick)>,
     control: Vec<ControlEffect>,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum NextAction {
     Continue,
-    Jump { order: usize, row: u64 },
+    Jump { order: usize, tick: u64 },
     Stop,
 }
 
@@ -265,8 +266,8 @@ impl Channel {
             next_tick: 0,
         }
     }
-    fn handle_row(&mut self, row: &PatternRow, info: &IrInfo) {
-        self.state.handle_row(row, info);
+    fn handle_tick(&mut self, tick: &PatternTick, info: &IrInfo) {
+        self.state.handle_tick(tick, info);
     }
     fn advance_time(
         &mut self,
@@ -348,18 +349,18 @@ impl ChannelState {
         updates
     }
 
-    fn handle_row(&mut self, row: &PatternRow, info: &IrInfo) {
-        if let Some(vol) = row.volume {
+    fn handle_tick(&mut self, tick: &PatternTick, info: &IrInfo) {
+        if let Some(vol) = tick.volume {
             self.volume.set(vol);
         }
-        if let Some(instrument) = row.instrument {
+        if let Some(instrument) = tick.instrument {
             let instr = &info.instruments[instrument];
             self.volume.load_instrument(instr);
             self.waveform.load_instrument(instr);
             self.pitch.load_instrument(instr);
             self.tap.load_instrument(instr);
         }
-        for effect in &row.effects {
+        for effect in &tick.effects {
             if let Effect::Volume(e) = effect {
                 self.volume.load_effect(e);
             }
@@ -367,7 +368,7 @@ impl ChannelState {
                 self.panning.load_effect(e);
             }
         }
-        self.pitch.load(row);
+        self.pitch.load(tick);
     }
 }
 
@@ -649,13 +650,13 @@ impl PitchCursor {
         self.instrument_arpeggio = instr.arpeggio_macro.as_ref().map(MacroCursor::load);
     }
 
-    fn load(&mut self, row: &PatternRow) {
+    fn load(&mut self, tick: &PatternTick) {
         let mut new_last_note = self.last_note;
-        if let Some(NoteEvent::Start(note)) = row.note {
+        if let Some(NoteEvent::Start(note)) = tick.note {
             new_last_note = Some(note);
             self.slide_effect = None;
         }
-        for effect in &row.effects {
+        for effect in &tick.effects {
             let Effect::Pitch(effect) = effect else {
                 continue;
             };
@@ -686,7 +687,7 @@ impl PitchCursor {
                 PitchEffect::NoteRelease(ticks) => self.release_delay = Some(ticks),
             }
         }
-        self.note_event = row.note;
+        self.note_event = tick.note;
         self.last_note = new_last_note;
     }
 
