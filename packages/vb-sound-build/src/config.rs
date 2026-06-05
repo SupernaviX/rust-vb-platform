@@ -66,8 +66,6 @@ struct RawAssetFile {
     pub imports: Vec<PathBuf>,
     #[serde(rename = "waveform", default)]
     pub waveforms: BTreeMap<String, RawWaveform>,
-    #[serde(rename = "midi", default)]
-    pub midis: BTreeMap<String, RawMidi>,
     #[serde(rename = "fur", default)]
     pub furs: BTreeMap<String, RawFur>,
     #[serde(default)]
@@ -100,25 +98,6 @@ const fn default_loop() -> bool {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct RawMidi {
-    pub file: PathBuf,
-    #[serde(rename = "loop", default = "default_loop")]
-    pub looping: bool,
-    #[serde(rename = "channel", default)]
-    pub channels: BTreeMap<String, RawChannel>,
-    #[serde(default)]
-    pub fixed_waveforms: Vec<String>,
-}
-impl RawMidi {
-    fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
-        Self {
-            file: opts.input_path(&dir.join(self.file)),
-            ..self
-        }
-    }
-}
-
-#[derive(Deserialize, Debug)]
 pub struct RawFur {
     pub file: PathBuf,
     #[serde(rename = "loop", default = "default_loop")]
@@ -137,7 +116,6 @@ impl RawFur {
 
 #[derive(Deserialize, Debug)]
 pub struct RawChannel {
-    #[serde(alias = "channel")]
     pub source: u8,
     pub waveform: Option<String>,
     pub tap: Option<u8>,
@@ -187,7 +165,6 @@ impl RawBeepBox {
 #[derive(Debug)]
 pub struct RawAssets {
     pub waveforms: BTreeMap<String, RawWaveform>,
-    pub midis: BTreeMap<String, RawMidi>,
     pub furs: BTreeMap<String, RawFur>,
     pub beepbox: BTreeMap<String, RawBeepBox>,
 }
@@ -195,7 +172,6 @@ pub struct RawAssets {
 pub fn parse(opts: &mut Options) -> Result<RawAssets> {
     let mut assets = RawAssets {
         waveforms: BTreeMap::new(),
-        midis: BTreeMap::new(),
         furs: BTreeMap::new(),
         beepbox: BTreeMap::new(),
     };
@@ -216,10 +192,6 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
             assets
                 .waveforms
                 .insert(name, instrument.fix_files(opts, dir));
-        }
-
-        for (name, midi) in file.midis {
-            assets.midis.insert(name, midi.fix_files(opts, dir));
         }
 
         for (name, fur) in file.furs {
