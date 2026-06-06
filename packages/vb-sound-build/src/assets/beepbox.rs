@@ -141,6 +141,7 @@ fn parse_pattern(
     raw: &BeepBoxPattern,
     instrument: usize,
 ) -> Pattern {
+    let pattern_length = song.beats_per_bar as u64 * song.ticks_per_beat as u64 * 12;
     let mut pattern = Pattern {
         data: BTreeMap::new(),
     };
@@ -193,11 +194,11 @@ fn parse_pattern(
             }
             last = point;
         }
-        let final_entry = pattern
-            .data
-            .entry((last.tick * 12.0).round() as u64)
-            .or_default();
-        final_entry.note = Some(NoteEvent::Stop);
+        let final_tick = (last.tick * 12.0).round() as u64;
+        if final_tick < pattern_length {
+            let final_entry = pattern.data.entry(final_tick).or_default();
+            final_entry.note = Some(NoteEvent::Stop);
+        }
     }
     pattern
 }

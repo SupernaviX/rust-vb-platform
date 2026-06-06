@@ -277,8 +277,8 @@ impl Channel {
     ) -> Result<()> {
         for (new_tick, update) in (self.next_tick..).zip(self.state.advance(tick - self.next_tick))
         {
-            self.player.advance_time(clock.moment(new_tick));
             update.apply(&mut self.player, waveforms)?;
+            self.player.advance_time(clock.moment(new_tick));
         }
         self.next_tick = tick;
         Ok(())
