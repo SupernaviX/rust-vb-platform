@@ -1,8 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{collections::BTreeMap, fs, path::Path};
 
 use crate::{
     assets::{
@@ -15,21 +11,24 @@ use crate::{
     config::ChannelEffects,
 };
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
 
 pub struct BeepBoxDecoder {
     name: String,
-    file: PathBuf,
+    song: BeepBoxJson,
     channels: BTreeMap<u8, Vec<Channel>>,
 }
 impl BeepBoxDecoder {
-    pub fn new(name: &str, file: &Path) -> Self {
-        Self {
+    pub fn new(name: &str, file: &Path) -> Result<Self> {
+        let bytes = fs::read(file)
+            .map_err(|e| anyhow!("could not read beepbox from {}: {}", file.display(), e))?;
+        let song = serde_json::from_slice(&bytes).context("could not parse beepbox json")?;
+        Ok(Self {
             name: name.to_string(),
-            file: file.to_path_buf(),
+            song,
             channels: BTreeMap::new(),
-        }
+        })
     }
 
     pub fn pcm_channel(
@@ -38,7 +37,11 @@ impl BeepBoxDecoder {
         source: u8,
         waveform: [u8; 32],
         effects: &ChannelEffects,
-    ) {
+    ) -> Result<()> {
+        let Some(channel) = self.song.channels.get(source as usize) else {
+            bail!("Beepbox {} has no channel {source}", self.name);
+        };
+        let base_volume = channel.instruments.first().map_or(100, |i| i.volume) as f64 / 100.0;
         self.channels.entry(source).or_default().push(Channel {
             index,
             instrument: Instrument {
@@ -49,11 +52,25 @@ impl BeepBoxDecoder {
                 waveform_macro: None,
                 tap_macro: None,
             },
-            effects: effects.clone(),
+            effects: ChannelEffects {
+                volume: effects.volume * base_volume,
+                ..effects.clone()
+            },
         });
+        Ok(())
     }
 
-    pub fn noise_channel(&mut self, index: u8, source: u8, tap: u8, effects: &ChannelEffects) {
+    pub fn noise_channel(
+        &mut self,
+        index: u8,
+        source: u8,
+        tap: u8,
+        effects: &ChannelEffects,
+    ) -> Result<()> {
+        let Some(channel) = self.song.channels.get(source as usize) else {
+            bail!("Beepbox {} has no channel {source}", self.name);
+        };
+        let base_volume = channel.instruments.first().map_or(100, |i| i.volume) as f64 / 100.0;
         self.channels.entry(source).or_default().push(Channel {
             index,
             instrument: Instrument {
@@ -64,15 +81,16 @@ impl BeepBoxDecoder {
                 waveform_macro: None,
                 tap_macro: None,
             },
-            effects: effects.clone(),
+            effects: ChannelEffects {
+                volume: effects.volume * base_volume,
+                ..effects.clone()
+            },
         });
+        Ok(())
     }
 
     pub fn decode(self, waveforms: &mut WaveformSetData) -> Result<Vec<ChannelData>> {
-        let bytes = fs::read(&self.file)
-            .map_err(|e| anyhow!("could not read beepbox from {}: {}", self.file.display(), e))?;
-        let song: BeepBoxJson =
-            serde_json::from_slice(&bytes).context("could not parse beepbox json")?;
+        let song = self.song;
 
         let ticks_per_second =
             song.beats_per_minute as f32 * song.ticks_per_beat as f32 * 12.0 / 60.0;
@@ -264,6 +282,7 @@ impl BeepBoxKey {
 struct BeepBoxChannel {
     #[serde(rename = "type")]
     type_: BeepBoxChannelType,
+    instruments: Vec<BeepBoxInstrument>,
     patterns: Vec<BeepBoxPattern>,
     sequence: Vec<usize>,
 }
@@ -273,6 +292,11 @@ struct BeepBoxChannel {
 enum BeepBoxChannelType {
     Pitch,
     Drum,
+}
+
+#[derive(Deserialize)]
+struct BeepBoxInstrument {
+    volume: u8,
 }
 
 #[derive(Deserialize)]
