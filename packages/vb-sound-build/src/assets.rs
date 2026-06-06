@@ -15,25 +15,30 @@ use crate::{
 pub fn process(assets: RawAssets) -> Result<Assets> {
     let mut waveform_sets = vec![];
     let mut named_waveforms = HashMap::new();
+    let mut named_instruments = HashMap::new();
 
     let mut furs = BTreeMap::new();
     for (name, raw) in &assets.furs {
         let decoder = FurDecoder::new(name, &raw.file, raw.looping)?;
         furs.insert(name.clone(), decoder);
     }
-    for (name, instrument) in assets.waveforms {
-        if let Some(file) = instrument.file {
+    for (name, waveform) in assets.waveforms {
+        if let Some(file) = waveform.file {
             let waveform = fur::decode_waveform(&file)?;
             named_waveforms.insert(name, waveform);
-        } else if let Some(fur) = instrument.fur {
+        } else if let Some(fur) = waveform.fur {
             let decoder = furs.get(&fur.name).expect("unrecognized fur");
             let waveform = decoder
                 .wavetable(fur.wavetable)
                 .expect("unrecognized wavetable");
             named_waveforms.insert(name, waveform);
-        } else if let Some(waveform) = instrument.values {
+        } else if let Some(waveform) = waveform.values {
             named_waveforms.insert(name, waveform);
         }
+    }
+    for (name, instrument) in assets.instruments {
+        let instrument = fur::decode_instrument_file(&instrument.file)?;
+        named_instruments.insert(name, instrument);
     }
     let mut channels = vec![];
     for (name, decoder) in furs {
@@ -52,7 +57,7 @@ pub fn process(assets: RawAssets) -> Result<Assets> {
         waveform_sets.push(waveforms);
     }
     for (name, beepbox) in assets.beepbox {
-        let mut decoder = BeepBoxDecoder::new(&name, &beepbox.file);
+        let mut decoder = BeepBoxDecoder::new(&name, &beepbox.file)?;
         let mut waveforms = WaveformSetData::new(name);
         for waveform_name in &beepbox.fixed_waveforms {
             let waveform = named_waveforms
@@ -62,13 +67,18 @@ pub fn process(assets: RawAssets) -> Result<Assets> {
             waveforms.add_waveform(waveform)?;
         }
         for (index, channel) in beepbox.channels {
-            if let Some(waveform_name) = channel.waveform {
+            if let Some(instrument_name) = channel.instrument {
+                let instrument = named_instruments
+                    .get(&instrument_name)
+                    .unwrap_or_else(|| panic!("Unrecognized instrument \"{instrument_name}\""));
+                decoder.channel(index, channel.source, instrument.clone(), &channel.effects)?;
+            } else if let Some(waveform_name) = channel.waveform {
                 let waveform = named_waveforms
                     .get(&waveform_name)
                     .unwrap_or_else(|| panic!("Unrecognized waveform \"{waveform_name}\""));
-                decoder.pcm_channel(index, channel.source, *waveform, &channel.effects);
+                decoder.pcm_channel(index, channel.source, *waveform, &channel.effects)?;
             } else if let Some(tap) = channel.tap {
-                decoder.noise_channel(index, channel.source, tap, &channel.effects);
+                decoder.noise_channel(index, channel.source, tap, &channel.effects)?;
             }
         }
         for channel in decoder.decode(&mut waveforms)? {

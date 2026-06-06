@@ -85,7 +85,7 @@ pub enum ControlEffect {
     StopSong,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Instrument {
     pub waveform: Option<[u8; 32]>,
     pub tap: Option<u8>,

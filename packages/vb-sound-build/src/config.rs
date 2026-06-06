@@ -66,6 +66,8 @@ struct RawAssetFile {
     pub imports: Vec<PathBuf>,
     #[serde(rename = "waveform", default)]
     pub waveforms: BTreeMap<String, RawWaveform>,
+    #[serde(rename = "instrument", default)]
+    pub instruments: BTreeMap<String, RawInstrument>,
     #[serde(rename = "fur", default)]
     pub furs: BTreeMap<String, RawFur>,
     #[serde(default)]
@@ -98,6 +100,18 @@ const fn default_loop() -> bool {
 }
 
 #[derive(Deserialize, Debug)]
+pub struct RawInstrument {
+    pub file: PathBuf,
+}
+impl RawInstrument {
+    fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
+        Self {
+            file: opts.input_path(&dir.join(self.file)),
+        }
+    }
+}
+
+#[derive(Deserialize, Debug)]
 pub struct RawFur {
     pub file: PathBuf,
     #[serde(rename = "loop", default = "default_loop")]
@@ -118,6 +132,7 @@ impl RawFur {
 pub struct RawChannel {
     pub source: u8,
     pub waveform: Option<String>,
+    pub instrument: Option<String>,
     pub tap: Option<u8>,
     #[serde(flatten, default)]
     pub effects: ChannelEffects,
@@ -165,6 +180,7 @@ impl RawBeepBox {
 #[derive(Debug)]
 pub struct RawAssets {
     pub waveforms: BTreeMap<String, RawWaveform>,
+    pub instruments: BTreeMap<String, RawInstrument>,
     pub furs: BTreeMap<String, RawFur>,
     pub beepbox: BTreeMap<String, RawBeepBox>,
 }
@@ -172,6 +188,7 @@ pub struct RawAssets {
 pub fn parse(opts: &mut Options) -> Result<RawAssets> {
     let mut assets = RawAssets {
         waveforms: BTreeMap::new(),
+        instruments: BTreeMap::new(),
         furs: BTreeMap::new(),
         beepbox: BTreeMap::new(),
     };
@@ -188,9 +205,13 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
             files.push(opts.input_path(&dir.join(import)));
         }
 
-        for (name, instrument) in file.waveforms {
+        for (name, waveform) in file.waveforms {
+            assets.waveforms.insert(name, waveform.fix_files(opts, dir));
+        }
+
+        for (name, instrument) in file.instruments {
             assets
-                .waveforms
+                .instruments
                 .insert(name, instrument.fix_files(opts, dir));
         }
 

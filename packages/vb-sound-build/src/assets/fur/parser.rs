@@ -1,7 +1,7 @@
 #![allow(unused)]
 #![allow(clippy::unit_arg)]
 
-use std::io::Read;
+use std::{collections::BTreeMap, io::Read};
 
 use binrw::{BinRead, FilePtr32, NullString, file_ptr::FilePtrArgs, helpers::until_exclusive};
 
@@ -126,6 +126,34 @@ pub trait FurInstrument {
         })
     }
 
+    fn wavetables(&self) -> BTreeMap<usize, [u8; 32]> {
+        let mut result = BTreeMap::new();
+        for feature in self.features() {
+            match feature {
+                FurFeature::WavetableListOld(wl) => {
+                    for (index, wavetable) in wl
+                        .wavetable_indexes
+                        .iter()
+                        .zip(wl.wavetable_pointers.iter())
+                    {
+                        result.insert(*index as usize, wavetable.to_waveform());
+                    }
+                }
+                FurFeature::WavetableList(wl) => {
+                    for (index, wavetable) in wl
+                        .wavetable_indexes
+                        .iter()
+                        .zip(wl.wavetable_pointers.iter())
+                    {
+                        result.insert(*index as usize, wavetable.to_waveform());
+                    }
+                }
+                _ => {}
+            }
+        }
+        result
+    }
+
     fn macros(&self) -> Option<&[FurMacro]> {
         self.features().iter().find_map(|f| match f {
             FurFeature::MacroData(data) => Some(data.as_slice()),
@@ -162,6 +190,10 @@ pub enum FurFeature {
     ),
     #[br(pre_assert(code == b"WS"))]
     WavetableSynthData(FurWavetableSynthData),
+    #[br(pre_assert(code == b"WL"))]
+    WavetableListOld(FurWavetableListOld),
+    #[br(pre_assert(code == b"LW"))]
+    WavetableList(FurWavetableList),
     #[br(pre_assert(code == b"EN"))]
     End,
     Unknown {
@@ -232,7 +264,37 @@ pub struct FurWavetable {
     width: u32,
     height: u32,
     #[br(count = width)]
-    pub data: Vec<u32>,
+    data: Vec<u32>,
+}
+impl FurWavetable {
+    pub fn to_waveform(&self) -> [u8; 32] {
+        assert!(self.data.len() == 32, "Invalid wavetable data");
+        let mut result = [0; 32];
+        for (index, sample) in self.data.iter().enumerate() {
+            result[index] = *sample as u8;
+        }
+        result
+    }
+}
+
+#[derive(BinRead, Debug)]
+#[br(little)]
+pub struct FurWavetableListOld {
+    size: u8,
+    #[br(count = size)]
+    pub wavetable_indexes: Vec<u8>,
+    #[br(count = size)]
+    pub wavetable_pointers: Vec<FilePtr32<FurWavetable>>,
+}
+
+#[derive(BinRead, Debug)]
+#[br(little)]
+pub struct FurWavetableList {
+    size: u16,
+    #[br(count = size)]
+    pub wavetable_indexes: Vec<u16>,
+    #[br(count = size)]
+    pub wavetable_pointers: Vec<FilePtr32<FurWavetable>>,
 }
 
 #[derive(BinRead, Debug)]

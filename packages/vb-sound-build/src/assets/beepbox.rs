@@ -38,26 +38,11 @@ impl BeepBoxDecoder {
         waveform: [u8; 32],
         effects: &ChannelEffects,
     ) -> Result<()> {
-        let Some(channel) = self.song.channels.get(source as usize) else {
-            bail!("Beepbox {} has no channel {source}", self.name);
+        let instrument = Instrument {
+            waveform: Some(waveform),
+            ..Instrument::default()
         };
-        let base_volume = channel.instruments.first().map_or(100, |i| i.volume) as f64 / 100.0;
-        self.channels.entry(source).or_default().push(Channel {
-            index,
-            instrument: Instrument {
-                waveform: Some(waveform),
-                tap: None,
-                volume_macro: None,
-                arpeggio_macro: None,
-                waveform_macro: None,
-                tap_macro: None,
-            },
-            effects: ChannelEffects {
-                volume: effects.volume * base_volume,
-                ..effects.clone()
-            },
-        });
-        Ok(())
+        self.channel(index, source, instrument, effects)
     }
 
     pub fn noise_channel(
@@ -67,20 +52,27 @@ impl BeepBoxDecoder {
         tap: u8,
         effects: &ChannelEffects,
     ) -> Result<()> {
+        let instrument = Instrument {
+            tap: Some(tap),
+            ..Instrument::default()
+        };
+        self.channel(index, source, instrument, effects)
+    }
+
+    pub fn channel(
+        &mut self,
+        index: u8,
+        source: u8,
+        instrument: Instrument,
+        effects: &ChannelEffects,
+    ) -> Result<()> {
         let Some(channel) = self.song.channels.get(source as usize) else {
             bail!("Beepbox {} has no channel {source}", self.name);
         };
         let base_volume = channel.instruments.first().map_or(100, |i| i.volume) as f64 / 100.0;
         self.channels.entry(source).or_default().push(Channel {
             index,
-            instrument: Instrument {
-                waveform: None,
-                tap: Some(tap),
-                volume_macro: None,
-                arpeggio_macro: None,
-                waveform_macro: None,
-                tap_macro: None,
-            },
+            instrument,
             effects: ChannelEffects {
                 volume: effects.volume * base_volume,
                 ..effects.clone()

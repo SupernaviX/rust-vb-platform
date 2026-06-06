@@ -14,8 +14,8 @@ use crate::{
     assets::{
         ChannelData, WaveformSetData,
         fur::parser::{
-            FurEffect, FurFeature, FurHeader, FurInfoBlock, FurMacro, FurMacroBody, FurPatternRow,
-            FurWavetableFile,
+            FurEffect, FurFeature, FurHeader, FurInfoBlock, FurInstrument, FurInstrumentFile,
+            FurMacro, FurMacroBody, FurPatternRow, FurWavetableFile,
         },
         ir::{
             self, Channel, ControlEffect, Effect, Instrument, InstrumentMacro, IrInfo, NoteEvent,
@@ -28,13 +28,59 @@ use crate::{
 pub fn decode_waveform(file: &Path) -> Result<[u8; 32]> {
     let bytes = fs::read(file)?;
     let file = FurWavetableFile::read(&mut Cursor::new(bytes))?;
-    file.wavetable
-        .data
-        .into_iter()
-        .map(|i| i as u8)
-        .collect::<Vec<u8>>()
-        .try_into()
-        .map_err(|v: Vec<u8>| anyhow::anyhow!("invalid wavetable ({} value(s))", v.len()))
+    Ok(file.wavetable.to_waveform())
+}
+
+pub fn decode_instrument_file(file: &Path) -> Result<Instrument> {
+    let bytes = fs::read(file)?;
+    let file = FurInstrumentFile::read(&mut Cursor::new(bytes))?;
+    decode_instrument(&file, None)
+}
+
+fn decode_instrument(raw: &impl FurInstrument, info: Option<&FurInfoBlock>) -> Result<Instrument> {
+    let mut instrument = Instrument::default();
+    let mut waveforms = raw.wavetables();
+    if let Some(info) = info {
+        for (index, wavetable) in info.wavetables.iter().enumerate() {
+            waveforms.insert(index, wavetable.to_waveform());
+        }
+    }
+    let load_waveform = |index: usize| match waveforms.get(&index) {
+        Some(waveform) => Ok(*waveform),
+        None => bail!("invalid waveform {index}"),
+    };
+    for feature in raw.features() {
+        match feature {
+            FurFeature::WavetableSynthData(ws) => {
+                instrument.waveform = Some(load_waveform(ws.first_wave as usize)?);
+            }
+            FurFeature::MacroData(md) => {
+                for m in md {
+                    match m {
+                        FurMacro::Volume(mb) => {
+                            let m = parse_macro(mb, |v| Ok(*v as f64 / 15.0))?;
+                            instrument.volume_macro = Some(m)
+                        }
+                        FurMacro::Arpeggio(mb) => {
+                            let m = parse_macro(mb, |a| Ok(*a))?;
+                            instrument.arpeggio_macro = Some(m);
+                        }
+                        FurMacro::Waveform(mb) => {
+                            let m = parse_macro(mb, |i| load_waveform(*i as usize))?;
+                            instrument.waveform_macro = Some(m);
+                        }
+                        FurMacro::Duty(mb) => {
+                            let m = parse_macro(mb, |i| Ok(*i))?;
+                            instrument.tap_macro = Some(m);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(instrument)
 }
 
 pub struct FurDecoder {
@@ -58,12 +104,7 @@ impl FurDecoder {
 
     pub fn wavetable(&self, index: usize) -> Option<[u8; 32]> {
         let wavetable = &self.info.wavetables.get(index)?.value;
-        assert!(wavetable.data.len() == 32, "Invalid wavetable data");
-        let mut result = [0; 32];
-        for (index, sample) in wavetable.data.iter().enumerate() {
-            result[index] = *sample as u8;
-        }
-        Some(result)
+        Some(wavetable.to_waveform())
     }
 
     pub fn decode(self, waveforms: &mut WaveformSetData) -> Result<Vec<ChannelData>> {
@@ -83,45 +124,7 @@ impl FurDecoder {
             control: vec![BTreeMap::new(); info.orders[0].len()],
         };
         for raw_instrument in &info.instruments {
-            let mut instrument = Instrument {
-                waveform: None,
-                tap: None,
-                volume_macro: None,
-                arpeggio_macro: None,
-                waveform_macro: None,
-                tap_macro: None,
-            };
-            for feature in &raw_instrument.features {
-                match feature {
-                    FurFeature::WavetableSynthData(ws) => {
-                        instrument.waveform = Some(load_waveform(&info, ws.first_wave as usize)?);
-                    }
-                    FurFeature::MacroData(md) => {
-                        for m in md {
-                            match m {
-                                FurMacro::Volume(mb) => {
-                                    let m = parse_macro(mb, |v| Ok(*v as f64 / 15.0))?;
-                                    instrument.volume_macro = Some(m)
-                                }
-                                FurMacro::Arpeggio(mb) => {
-                                    let m = parse_macro(mb, |a| Ok(*a))?;
-                                    instrument.arpeggio_macro = Some(m);
-                                }
-                                FurMacro::Waveform(mb) => {
-                                    let m = parse_macro(mb, |i| load_waveform(&info, *i as usize))?;
-                                    instrument.waveform_macro = Some(m);
-                                }
-                                FurMacro::Duty(mb) => {
-                                    let m = parse_macro(mb, |i| Ok(*i))?;
-                                    instrument.tap_macro = Some(m);
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
+            let instrument = decode_instrument(&raw_instrument.value, Some(&info))?;
             ir.instruments.push(instrument);
         }
 
@@ -164,20 +167,6 @@ impl FurDecoder {
 
         ir::decode(ir, waveforms, looping)
     }
-}
-
-fn load_waveform(info: &FurInfoBlock, index: usize) -> Result<[u8; 32]> {
-    let Some(wavetable) = info.wavetables.get(index) else {
-        bail!("Invalid wavetable index {index}");
-    };
-    if wavetable.data.len() != 32 {
-        bail!("Invalid wavetable data");
-    }
-    let mut result = [0; 32];
-    for (index, sample) in wavetable.data.iter().enumerate() {
-        result[index] = *sample as u8;
-    }
-    Ok(result)
 }
 
 fn parse_macro<T1, T2, F>(mb: &FurMacroBody<T1>, map: F) -> Result<InstrumentMacro<T2>>
