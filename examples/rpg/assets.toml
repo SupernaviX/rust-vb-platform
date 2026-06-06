@@ -9,3 +9,17 @@ spritesheets = [
     "assets/esma_still.toml",
     "assets/esma_walk.toml",
 ]
+
+[waveform.square]
+values = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 62, 62, 62, 63, 63, 63, 63, 62, 62, 62, 62, 63, 63, 63, 63]
+
+[waveform.triangle]
+file = "assets/instruments/Triangle.fuw"
+
+[beepbox.waltz]
+file = "assets/waltz.json"
+channel.0 = { source = 0, waveform = "triangle" }
+channel.1 = { source = 1, waveform = "square" }
+channel.2 = { source = 2, waveform = "square" }
+channel.5 = { source = 3, tap = 0 }
+fixed_waveforms = ["square"]

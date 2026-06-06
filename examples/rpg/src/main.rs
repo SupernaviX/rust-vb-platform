@@ -6,13 +6,16 @@ mod assets;
 use fixed::types::I10F6;
 use vb_graphics::{self as gfx, BgSprite};
 use vb_rt::sys::{hardware, vip};
+use vb_sound as snd;
 
 vb_rt::rom_header!("Simple RPG", "SG", "SRPG");
 vb_rt::main!({ main() });
 
 static FRAME: gfx::FrameMonitor = gfx::FrameMonitor::new();
+static SOUND: snd::SoundPlayer = snd::SoundPlayer::new();
 vb_rt::vip_interrupt_handler!({
     FRAME.acknowledge_interrupts();
+    SOUND.tick();
 });
 
 fn main() {
@@ -20,6 +23,12 @@ fn main() {
     gfx::set_colors(32, 64, 32);
     gfx::set_bkcol(0);
     gfx::load_character_data(&assets::ALL, 0);
+
+    snd::WAVEFORMS.load(&assets::WALTZ_WAVEFORMS);
+    snd::CHANNELS[0].play(&assets::WALTZ_0);
+    snd::CHANNELS[1].play(&assets::WALTZ_1);
+    snd::CHANNELS[2].play(&assets::WALTZ_2);
+    snd::CHANNELS[5].play(&assets::WALTZ_5);
 
     assets::all::load_all(0);
 

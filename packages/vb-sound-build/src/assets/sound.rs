@@ -246,8 +246,10 @@ pub struct ChannelBuilder {
 }
 impl ChannelBuilder {
     pub fn build(self) -> ChannelData {
+        println!("{}:", self.name);
         let mut encoder = EventEncoder::new();
         for event in self.player.finish() {
+            println!("  {event:?}");
             encoder.encode(event);
         }
         ChannelData {
