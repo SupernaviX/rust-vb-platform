@@ -49,7 +49,7 @@ SECTIONS
     *(.bss.*)
     *(.sbss)
     _bss_end = .;
-  } >RAM
+  } >RAM AT>RAM
 
   __gp = ORIGIN(RAM) + (LENGTH(RAM) / 2);
 
