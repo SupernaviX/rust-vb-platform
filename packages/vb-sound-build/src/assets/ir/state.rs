@@ -256,8 +256,8 @@ struct Channel {
 impl Channel {
     fn new(channel: usize, effects: ChannelEffects) -> Self {
         let mut player = ChannelPlayer::new(effects, false);
-        player.set_envelope(15);
-        player.set_volume((15, 15));
+        player.set_envelope(1.0);
+        player.set_volume((1.0, 1.0));
         player.advance_time(Moment::START);
         Self {
             channel,
@@ -384,11 +384,9 @@ pub struct ChannelUpdate {
 impl ChannelUpdate {
     pub fn apply(&self, player: &mut ChannelPlayer, waveforms: &mut WaveformSetData) -> Result<()> {
         if let Some((left, right)) = self.volume {
-            let volume = ((left * 15.0) as u8, (right * 15.0) as u8);
-            player.set_volume(volume);
+            player.set_volume((left, right));
         }
         if let Some(envelope) = self.envelope {
-            let envelope = (envelope * 15.0) as u8;
             player.set_envelope(envelope);
         }
         player.set_pitch_shift(self.pitch_shift);

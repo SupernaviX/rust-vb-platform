@@ -13,12 +13,12 @@ spritesheets = [
 [waveform.square]
 values = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 62, 62, 62, 63, 63, 63, 63, 62, 62, 62, 62, 63, 63, 63, 63]
 
-[waveform.triangle]
-file = "assets/instruments/Triangle.fuw"
+[instrument.triangle]
+file = "assets/instruments/Triangle.fui"
 
 [beepbox.waltz]
 file = "assets/waltz.json"
-channel.0 = { source = 0, waveform = "triangle" }
+channel.0 = { source = 0, instrument = "triangle", volume = 2.0 }
 channel.1 = { source = 1, waveform = "square" }
 channel.2 = { source = 2, waveform = "square" }
 channel.5 = { source = 3, tap = 0 }

@@ -113,10 +113,10 @@ impl ChannelPlayer {
         }
     }
 
-    pub fn set_volume(&mut self, volume: (u8, u8)) {
+    pub fn set_volume(&mut self, volume: (f64, f64)) {
         let volume = (
-            (volume.0 as f64 * self.effects.volume) as u8,
-            (volume.1 as f64 * self.effects.volume) as u8,
+            vol_to_vb(volume.0 * self.effects.volume),
+            vol_to_vb(volume.1 * self.effects.volume),
         );
         if self.last_volume != Some(volume) {
             self.current_row().volume = Some(volume);
@@ -124,7 +124,12 @@ impl ChannelPlayer {
         }
     }
 
-    pub fn set_envelope(&mut self, envelope: u8) {
+    pub fn set_envelope(&mut self, envelope: f64) {
+        let envelope = vol_to_vb(envelope);
+        self.set_envelope_u8(envelope);
+    }
+
+    fn set_envelope_u8(&mut self, envelope: u8) {
         if self.last_envelope != Some(envelope) || self.stale_envelope {
             self.current_row().envelope = Some(envelope);
             self.last_envelope = Some(envelope);
@@ -145,7 +150,7 @@ impl ChannelPlayer {
             self.stop_note();
         }
         if let Some(envelope) = self.last_envelope {
-            self.set_envelope(envelope);
+            self.set_envelope_u8(envelope);
         }
         if self.noise {
             key = (key as u16 * 3 / 4) as u8;
@@ -240,16 +245,19 @@ impl ChannelPlayer {
     }
 }
 
+fn vol_to_vb(vol: f64) -> u8 {
+    let vb_vol = (vol * 15.0).round() as u8;
+    vb_vol.min(15)
+}
+
 pub struct ChannelBuilder {
     pub name: String,
     pub player: ChannelPlayer,
 }
 impl ChannelBuilder {
     pub fn build(self) -> ChannelData {
-        println!("{}:", self.name);
         let mut encoder = EventEncoder::new();
         for event in self.player.finish() {
-            println!("  {event:?}");
             encoder.encode(event);
         }
         ChannelData {
