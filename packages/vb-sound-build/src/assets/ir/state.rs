@@ -262,7 +262,7 @@ impl Channel {
         Self {
             channel,
             player,
-            state: ChannelState::new(),
+            state: ChannelState::new(channel),
             next_tick: 0,
         }
     }
@@ -308,9 +308,10 @@ struct ChannelState {
     waveform: WaveformCursor,
     tap: TapCursor,
     empty: bool,
+    is_pcm: bool,
 }
 impl ChannelState {
-    fn new() -> Self {
+    fn new(channel: usize) -> Self {
         Self {
             panning: PanningCursor::new(),
             volume: VolumeCursor::new(),
@@ -318,6 +319,7 @@ impl ChannelState {
             waveform: WaveformCursor::new(),
             tap: TapCursor::new(),
             empty: true,
+            is_pcm: channel != 5,
         }
     }
 
@@ -341,8 +343,12 @@ impl ChannelState {
                 volume: self.panning.next(),
                 envelope: self.volume.next(),
                 pitch_shift: self.pitch.next_shift(),
-                waveform: self.waveform.next(),
-                tap: self.tap.next(),
+                waveform: if self.is_pcm {
+                    self.waveform.next()
+                } else {
+                    None
+                },
+                tap: if !self.is_pcm { self.tap.next() } else { None },
                 note_event,
             });
         }
@@ -356,9 +362,12 @@ impl ChannelState {
         if let Some(instrument) = tick.instrument {
             let instr = &info.instruments[instrument];
             self.volume.load_instrument(instr);
-            self.waveform.load_instrument(instr);
             self.pitch.load_instrument(instr);
-            self.tap.load_instrument(instr);
+            if self.is_pcm {
+                self.waveform.load_instrument(instr);
+            } else {
+                self.tap.load_instrument(instr);
+            }
         }
         for effect in &tick.effects {
             if let Effect::Volume(e) = effect {

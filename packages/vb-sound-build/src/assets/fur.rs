@@ -80,6 +80,12 @@ fn decode_instrument(raw: &impl FurInstrument, info: Option<&FurInfoBlock>) -> R
             _ => {}
         }
     }
+    if instrument.waveform.is_none() && instrument.waveform_macro.is_none() {
+        instrument.waveform = waveforms.first_key_value().map(|(_, w)| *w);
+    }
+    if instrument.tap.is_none() && instrument.tap_macro.is_none() {
+        instrument.tap = Some(0);
+    }
     Ok(instrument)
 }
 
