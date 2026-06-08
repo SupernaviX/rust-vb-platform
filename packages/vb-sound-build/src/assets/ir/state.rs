@@ -658,9 +658,8 @@ impl PitchCursor {
     }
 
     fn load(&mut self, tick: &PatternTick) {
-        let mut new_last_note = self.last_note;
         if let Some(NoteEvent::Start(note)) = tick.note {
-            new_last_note = Some(note);
+            self.last_note = Some(note);
             self.slide_effect = None;
         }
         for effect in &tick.effects {
@@ -695,7 +694,6 @@ impl PitchCursor {
             }
         }
         self.note_event = tick.note;
-        self.last_note = new_last_note;
     }
 
     fn load_pitch_slide(&mut self, speed: f64) {
