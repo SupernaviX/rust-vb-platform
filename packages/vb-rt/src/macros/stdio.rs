@@ -5,7 +5,7 @@
 macro_rules! print {
     ($($arg:tt)*) => {
         let mut writer = $crate::stdio::OutWriter;
-        writer.write(format_args!($($arg)*));
+        let _ = core::fmt::Write::write_fmt(&mut writer, format_args!($($arg)*));
     };
 }
 
