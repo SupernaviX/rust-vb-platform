@@ -176,7 +176,7 @@ pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
                     continue;
                 };
                 let load_method = if image.stereo { "load_stereo" } else { "load" };
-                if image.chardata == chardata {
+                if image.chardata.as_ref().is_some_and(|c| c == &chardata) {
                     writeln!(
                         file,
                         "        {}.{load_method}(super::{}, char_offset);",

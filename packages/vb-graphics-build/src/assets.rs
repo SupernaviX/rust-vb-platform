@@ -18,7 +18,7 @@ use crate::{
         RawImageData, RawImageRegion, RawMask,
     },
 };
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use bitfield_struct::bitfield;
 use png::PngAtlas;
 
@@ -215,7 +215,10 @@ impl AssetProcessor {
 
     fn process_image(&mut self, name: String, image: RawImage) -> Result<()> {
         let chardata = image.chardata.clone();
-        let (width, height, frame) = self.extract_image(image)?;
+        let real_chardata = chardata.clone().unwrap_or(name.clone());
+        let (width, height, frame) = self
+            .extract_image(image, real_chardata)
+            .context(format!("could not parse {name}"))?;
         self.imagedata.insert(
             name.clone(),
             ImageData {
@@ -232,8 +235,11 @@ impl AssetProcessor {
     fn process_animation(&mut self, name: String, animation: RawAnimation) -> Result<()> {
         let mut frames = vec![];
         let mut size = None;
-        for image in animation.images {
-            let (frame_width, frame_height, frame) = self.extract_image(image)?;
+        for (index, image) in animation.images.into_iter().enumerate() {
+            let real_chardata = image.chardata.clone().unwrap_or(format!("{name}-{index}"));
+            let (frame_width, frame_height, frame) = self
+                .extract_image(image, real_chardata)
+                .context(format!("could not parse frame {index} of {name}"))?;
             size = size.or(Some((frame_width, frame_height)));
             if size != Some((frame_width, frame_height)) {
                 bail!("all frames of animation \"{name}\" must be the same size");
@@ -256,11 +262,15 @@ impl AssetProcessor {
         Ok(())
     }
 
-    fn extract_image(&mut self, image: RawImage) -> Result<(usize, usize, FrameData)> {
+    fn extract_image(
+        &mut self,
+        image: RawImage,
+        chardata: String,
+    ) -> Result<(usize, usize, FrameData)> {
         match image.data {
             RawImageData::Mono(region) => {
                 let (width, height, cells) = self.extract_region(
-                    image.chardata,
+                    chardata,
                     image.palette,
                     region,
                     &ImageEffects::default(),
@@ -274,19 +284,14 @@ impl AssetProcessor {
                 effects,
             } => {
                 let (width_l, height_l, left) = self.extract_region(
-                    image.chardata.clone(),
+                    chardata.clone(),
                     image.palette,
                     left,
                     &effects,
                     Eye::Left,
                 )?;
-                let (width_r, height_r, right) = self.extract_region(
-                    image.chardata,
-                    image.palette,
-                    right,
-                    &effects,
-                    Eye::Right,
-                )?;
+                let (width_r, height_r, right) =
+                    self.extract_region(chardata, image.palette, right, &effects, Eye::Right)?;
                 if width_l != width_r || height_l != height_r {
                     bail!("left and right images must be same size");
                 }
@@ -529,8 +534,8 @@ impl AssetProcessor {
                     }
                 }
             };
-            if let Some(image) = &image {
-                chardatas.insert(image.chardata.clone());
+            if let Some(chardata) = image.as_ref().and_then(|i| i.chardata.as_ref()) {
+                chardatas.insert(chardata.clone());
             }
             match &kind {
                 BgSpriteKind::Image(data) => {
@@ -829,7 +834,7 @@ pub struct ImageData {
     pub name: String,
     pub width: usize,
     pub height: usize,
-    chardata: String,
+    chardata: Option<String>,
     pub frame: FrameData,
 }
 
@@ -837,7 +842,7 @@ pub struct AnimationData {
     pub name: String,
     pub width: usize,
     pub height: usize,
-    chardata: String,
+    chardata: Option<String>,
     pub frames: Vec<FrameData>,
 }
 
@@ -892,7 +897,7 @@ pub struct BgSpriteAnimationData {
 #[derive(Debug)]
 pub struct ImageRefData {
     pub name: String,
-    pub chardata: String,
+    pub chardata: Option<String>,
     pub stereo: bool,
 }
 

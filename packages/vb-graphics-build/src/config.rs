@@ -48,7 +48,7 @@ impl Options {
 
 #[derive(Deserialize, Debug)]
 struct RawAnimationSerde {
-    chardata: String,
+    chardata: Option<String>,
     #[serde(default)]
     palette: Option<[u8; 3]>,
     frames: Vec<RawImageData>,
@@ -93,7 +93,7 @@ struct RawAssetFile {
 
 #[derive(Deserialize, Debug)]
 struct RawSpritesheet {
-    chardata: String,
+    chardata: Option<String>,
     #[serde(default)]
     palette: Option<[u8; 3]>,
     file: PathBuf,
@@ -190,7 +190,7 @@ pub struct RawAssets {
 
 #[derive(Debug)]
 pub struct RawAnimation {
-    pub chardata: String,
+    pub chardata: Option<String>,
     pub palette: Option<[u8; 3]>,
     pub images: Vec<RawImage>,
 }
@@ -210,7 +210,7 @@ impl RawAnimation {
 
 #[derive(Deserialize, Debug)]
 pub struct RawImage {
-    pub chardata: String,
+    pub chardata: Option<String>,
     #[serde(default)]
     pub palette: Option<[u8; 3]>,
     #[serde(flatten)]
