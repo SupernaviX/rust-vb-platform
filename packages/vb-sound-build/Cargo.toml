@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1"
-binrw = "0.15"
+binrw = { git = "https://github.com/jam1garner/binrw", rev = "e41a7e2" }
 flate2 = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
