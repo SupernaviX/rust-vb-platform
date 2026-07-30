@@ -101,14 +101,23 @@ const fn default_loop() -> bool {
 
 #[derive(Deserialize, Debug)]
 pub struct RawInstrument {
-    pub file: PathBuf,
+    pub file: Option<PathBuf>,
+    pub waveform: Option<String>,
+    pub vibrato: Option<RawVibrato>,
 }
 impl RawInstrument {
     fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
         Self {
-            file: opts.input_path(&dir.join(self.file)),
+            file: self.file.map(|f| opts.input_path(&dir.join(f))),
+            ..self
         }
     }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct RawVibrato {
+    pub speed: u8,
+    pub depth: u8,
 }
 
 #[derive(Deserialize, Debug)]

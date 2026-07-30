@@ -1,5 +1,6 @@
 mod beepbox;
 mod fur;
+mod instrument;
 mod ir;
 mod sound;
 
@@ -37,7 +38,7 @@ pub fn process(assets: RawAssets) -> Result<Assets> {
         }
     }
     for (name, instrument) in assets.instruments {
-        let instrument = fur::decode_instrument_file(&instrument.file)?;
+        let instrument = instrument::parse_instrument(&instrument, &named_waveforms)?;
         named_instruments.insert(name, instrument);
     }
     let mut channels = vec![];

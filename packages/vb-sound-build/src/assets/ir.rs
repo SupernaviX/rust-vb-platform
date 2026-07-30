@@ -91,6 +91,7 @@ pub struct Instrument {
     pub tap: Option<u8>,
     pub volume_macro: Option<InstrumentMacro<f64>>,
     pub arpeggio_macro: Option<InstrumentMacro<i8>>,
+    pub vibrato_macro: Option<InstrumentMacro<f64>>,
     pub waveform_macro: Option<InstrumentMacro<[u8; 32]>>,
     pub tap_macro: Option<InstrumentMacro<u8>>,
 }

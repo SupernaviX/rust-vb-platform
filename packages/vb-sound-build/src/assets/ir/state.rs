@@ -595,6 +595,7 @@ struct PitchCursor {
     instrument_arpeggio: Option<MacroCursor<i8>>,
     arpeggio_effect: Option<ArpeggioEffect>,
     arpeggio_speed: u8,
+    instrument_vibrato: Option<MacroCursor<f64>>,
     vibrato_effect: Option<VibratoEffect>,
     slide_effect: Option<PitchSlide>,
     last_note: Option<u8>,
@@ -609,6 +610,7 @@ impl PitchCursor {
             instrument_arpeggio: None,
             arpeggio_effect: None,
             arpeggio_speed: 1,
+            instrument_vibrato: None,
             vibrato_effect: None,
             slide_effect: None,
             last_note: None,
@@ -625,6 +627,9 @@ impl PitchCursor {
         }
         if let Some(arp) = self.arpeggio_effect.as_mut().map(|m| m.next()) {
             value += arp;
+        }
+        if let Some(ins) = self.instrument_vibrato.as_mut().and_then(|i| i.next()) {
+            value += ins;
         }
         if let Some(vib) = self.vibrato_effect.as_mut().map(|m| m.next()) {
             value += vib;
@@ -655,6 +660,7 @@ impl PitchCursor {
 
     fn load_instrument(&mut self, instr: &Instrument) {
         self.instrument_arpeggio = instr.arpeggio_macro.as_ref().map(MacroCursor::load);
+        self.instrument_vibrato = instr.vibrato_macro.as_ref().map(MacroCursor::load);
     }
 
     fn load(&mut self, tick: &PatternTick) {
@@ -733,6 +739,9 @@ impl PitchCursor {
 
     fn release_macros(&mut self) {
         if let Some(ins) = self.instrument_arpeggio.as_mut() {
+            ins.release();
+        }
+        if let Some(ins) = self.instrument_vibrato.as_mut() {
             ins.release();
         }
     }
