@@ -7,6 +7,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
+use normpath::PathExt as _;
 use serde::Deserialize;
 
 pub struct Options {
@@ -28,16 +29,21 @@ impl Options {
         })
     }
 
-    fn config_file_path(&mut self) -> PathBuf {
+    fn config_file_path(&mut self) -> Result<PathBuf> {
         self.input_path(&self.config_file.clone())
     }
 
-    fn input_path(&mut self, path: &Path) -> PathBuf {
-        let result = self.input_dir.join(path);
+    fn input_path(&mut self, path: &Path) -> Result<PathBuf> {
+        let result = self
+            .input_dir
+            .join(path)
+            .normalize()
+            .with_context(|| format!("could not open file \"{}\"", path.display()))?
+            .into_path_buf();
         if self.emit_cargo && self.seen.insert(result.clone()) {
             println!("cargo:rerun-if-changed={}", result.display());
         }
-        result
+        Ok(result)
     }
 
     pub(crate) fn output_file(&self, path: &str) -> Result<BufWriter<File>> {
@@ -148,15 +154,15 @@ pub struct RawBgSpriteMap {
     pub sprites: BTreeMap<String, RawBgSprite>,
 }
 impl RawBgSpriteMap {
-    fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
-        Self {
+    fn fix_files(self, opts: &mut Options, dir: &Path) -> Result<Self> {
+        Ok(Self {
             spritesheets: self
                 .spritesheets
                 .into_iter()
                 .map(|p| opts.input_path(&dir.join(&p)))
-                .collect(),
+                .collect::<Result<_>>()?,
             ..self
-        }
+        })
     }
 }
 
@@ -195,16 +201,16 @@ pub struct RawAnimation {
     pub images: Vec<RawImage>,
 }
 impl RawAnimation {
-    fn fix(self, opts: &mut Options, dir: &Path, palette: Option<[u8; 3]>) -> Self {
-        Self {
+    fn fix(self, opts: &mut Options, dir: &Path, palette: Option<[u8; 3]>) -> Result<Self> {
+        Ok(Self {
             chardata: self.chardata,
             palette: self.palette.or(palette),
             images: self
                 .images
                 .into_iter()
                 .map(|i| i.fix(opts, dir, self.palette.or(palette)))
-                .collect(),
-        }
+                .collect::<Result<_>>()?,
+        })
     }
 }
 
@@ -217,12 +223,12 @@ pub struct RawImage {
     pub data: RawImageData,
 }
 impl RawImage {
-    fn fix(self, opts: &mut Options, dir: &Path, palette: Option<[u8; 3]>) -> Self {
-        Self {
+    fn fix(self, opts: &mut Options, dir: &Path, palette: Option<[u8; 3]>) -> Result<Self> {
+        Ok(Self {
             palette: self.palette.or(palette),
-            data: self.data.fix_files(opts, dir),
+            data: self.data.fix_files(opts, dir)?,
             ..self
-        }
+        })
     }
 }
 
@@ -238,19 +244,19 @@ pub enum RawImageData {
     },
 }
 impl RawImageData {
-    fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
-        match self {
-            Self::Mono(region) => Self::Mono(region.fix_files(opts, dir)),
+    fn fix_files(self, opts: &mut Options, dir: &Path) -> Result<Self> {
+        Ok(match self {
+            Self::Mono(region) => Self::Mono(region.fix_files(opts, dir)?),
             Self::Stereo {
                 left,
                 right,
                 effects,
             } => Self::Stereo {
-                left: left.fix_files(opts, dir),
-                right: right.fix_files(opts, dir),
+                left: left.fix_files(opts, dir)?,
+                right: right.fix_files(opts, dir)?,
                 effects,
             },
-        }
+        })
     }
 }
 
@@ -271,10 +277,10 @@ pub struct RawMask {
     pub region: RawImageRegion,
 }
 impl RawMask {
-    fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
-        Self {
-            region: self.region.fix_files(opts, dir),
-        }
+    fn fix_files(self, opts: &mut Options, dir: &Path) -> Result<Self> {
+        Ok(Self {
+            region: self.region.fix_files(opts, dir)?,
+        })
     }
 }
 
@@ -301,11 +307,11 @@ pub struct RawImageRegion {
     pub effects: ImageEffects,
 }
 impl RawImageRegion {
-    fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
-        Self {
-            file: opts.input_path(&dir.join(self.file)),
+    fn fix_files(self, opts: &mut Options, dir: &Path) -> Result<Self> {
+        Ok(Self {
+            file: opts.input_path(&dir.join(self.file))?,
             ..self
-        }
+        })
     }
 }
 
@@ -315,11 +321,11 @@ pub struct RawFont {
     pub size: f32,
 }
 impl RawFont {
-    fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
-        Self {
-            file: opts.input_path(&dir.join(self.file)),
+    fn fix_files(self, opts: &mut Options, dir: &Path) -> Result<Self> {
+        Ok(Self {
+            file: opts.input_path(&dir.join(self.file))?,
             ..self
-        }
+        })
     }
 }
 
@@ -331,7 +337,7 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
         masks: BTreeMap::new(),
         fonts: BTreeMap::new(),
     };
-    let mut files = vec![(opts.config_file_path(), None)];
+    let mut files = vec![(opts.config_file_path()?, None)];
     let mut spritesheet_sprites = BTreeMap::new();
     while let Some((path, parent_palette)) = files.pop() {
         let file = std::fs::read_to_string(&path)
@@ -343,10 +349,10 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
         };
 
         for import in file.imports {
-            files.push((opts.input_path(&dir.join(import)), palette));
+            files.push((opts.input_path(&dir.join(import))?, palette));
         }
         for spritesheet in file.spritesheets {
-            let path = opts.input_path(&dir.join(spritesheet));
+            let path = opts.input_path(&dir.join(spritesheet))?;
             let Some(dir) = path.parent() else {
                 bail!("invalid spritesheet file path {}", path.display());
             };
@@ -354,36 +360,36 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
             let mut sprites = vec![];
             for (name, image) in parsed.images {
                 sprites.push(name.clone());
-                assets.images.insert(name, image.fix(opts, dir, palette));
+                assets.images.insert(name, image.fix(opts, dir, palette)?);
             }
             for (name, animation) in parsed.animations {
                 sprites.push(name.clone());
                 assets
                     .animations
-                    .insert(name, animation.fix(opts, dir, palette));
+                    .insert(name, animation.fix(opts, dir, palette)?);
             }
             spritesheet_sprites.insert(path, sprites);
         }
 
         for (name, font) in file.fonts {
-            assets.fonts.insert(name, font.fix_files(opts, dir));
+            assets.fonts.insert(name, font.fix_files(opts, dir)?);
         }
         for (name, image) in file.images {
-            assets.images.insert(name, image.fix(opts, dir, palette));
+            assets.images.insert(name, image.fix(opts, dir, palette)?);
         }
         for (name, animation) in file.animations {
             let animation: RawAnimation = animation.into();
             assets
                 .animations
-                .insert(name, animation.fix(opts, dir, palette));
+                .insert(name, animation.fix(opts, dir, palette)?);
         }
         for (name, mask) in file.masks {
-            assets.masks.insert(name, mask.fix_files(opts, dir));
+            assets.masks.insert(name, mask.fix_files(opts, dir)?);
         }
         for (name, bg_sprite_map) in file.bg_sprite_maps {
             assets
                 .bg_sprite_maps
-                .insert(name, bg_sprite_map.fix_files(opts, dir));
+                .insert(name, bg_sprite_map.fix_files(opts, dir)?);
         }
     }
     for (name, bg_sprite_map) in &mut assets.bg_sprite_maps {

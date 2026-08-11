@@ -40,8 +40,9 @@ checksum = "be5eb007b7cacc6c660343e96f650fedf4b5a77512399eb952ca6642cf8d13f7"
 
 [[package]]
 name = "binrw"
-version = "0.16.0-pre"
-source = "git+https://github.com/jam1garner/binrw?rev=e41a7e2#e41a7e2757414501630df0f29c6ed63eda55b23c"
+version = "0.15.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ad120d555272286c1017d25165ab8bd74806f13fc85b258484ec7e4ce75458f"
 dependencies = [
  "array-init",
  "binrw_derive",
@@ -50,8 +51,9 @@ dependencies = [
 
 [[package]]
 name = "binrw_derive"
-version = "0.16.0-pre"
-source = "git+https://github.com/jam1garner/binrw?rev=e41a7e2#e41a7e2757414501630df0f29c6ed63eda55b23c"
+version = "0.15.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6df92e0e9baae4dc82c7bad7715ca40c0a5c71539057bf2ea04a5c29c980410b"
 dependencies = [
  "either",
  "owo-colors",
@@ -243,6 +245,15 @@ checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
 dependencies = [
  "adler2",
  "simd-adler32",
+]
+
+[[package]]
+name = "normpath"
+version = "1.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9985ef7269fa99f3b12437bb698381da2428743ab90f20393f399fa14cab21a"
+dependencies = [
+ "windows-sys",
 ]
 
 [[package]]
@@ -448,6 +459,7 @@ dependencies = [
  "anyhow",
  "bitfield-struct",
  "fontdue",
+ "normpath",
  "png",
  "serde",
  "toml",
@@ -479,9 +491,25 @@ dependencies = [
  "anyhow",
  "binrw",
  "flate2",
+ "normpath",
  "serde",
  "serde_json",
  "toml",
+]
+
+[[package]]
+name = "windows-link"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
+
+[[package]]
+name = "windows-sys"
+version = "0.61.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
+dependencies = [
+ "windows-link",
 ]
 
 [[package]]

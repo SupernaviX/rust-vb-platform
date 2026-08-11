@@ -7,6 +7,7 @@ edition = "2024"
 anyhow = "1"
 bitfield-struct = "0.13"
 fontdue = "0.9"
+normpath = "1"
 png = "0.18"
 serde = { version = "1", features = ["derive"] }
 toml = "1"

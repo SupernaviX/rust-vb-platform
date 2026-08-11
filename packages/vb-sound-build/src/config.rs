@@ -7,6 +7,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
+use normpath::PathExt as _;
 use serde::Deserialize;
 
 pub struct Options {
@@ -42,16 +43,21 @@ impl Options {
         Self { input_dir, ..self }
     }
 
-    fn config_file_path(&mut self) -> PathBuf {
+    fn config_file_path(&mut self) -> Result<PathBuf> {
         self.input_path(&self.config_file.clone())
     }
 
-    fn input_path(&mut self, path: &Path) -> PathBuf {
-        let result = self.input_dir.join(path);
+    fn input_path(&mut self, path: &Path) -> Result<PathBuf> {
+        let result = self
+            .input_dir
+            .join(path)
+            .normalize()
+            .with_context(|| format!("could not open file \"{}\"", path.display()))?
+            .into_path_buf();
         if self.emit_cargo && self.seen.insert(result.clone()) {
             println!("cargo:rerun-if-changed={}", result.display());
         }
-        result
+        Ok(result)
     }
 
     pub(crate) fn output_file(&self, path: &str) -> Result<BufWriter<File>> {
@@ -81,11 +87,14 @@ pub struct RawWaveform {
     pub file: Option<PathBuf>,
 }
 impl RawWaveform {
-    fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
-        Self {
-            file: self.file.map(|f| opts.input_path(&dir.join(f))),
+    fn fix_files(self, opts: &mut Options, dir: &Path) -> Result<Self> {
+        Ok(Self {
+            file: self
+                .file
+                .map(|f| opts.input_path(&dir.join(f)))
+                .transpose()?,
             ..self
-        }
+        })
     }
 }
 
@@ -106,11 +115,14 @@ pub struct RawInstrument {
     pub vibrato: Option<RawVibrato>,
 }
 impl RawInstrument {
-    fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
-        Self {
-            file: self.file.map(|f| opts.input_path(&dir.join(f))),
+    fn fix_files(self, opts: &mut Options, dir: &Path) -> Result<Self> {
+        Ok(Self {
+            file: self
+                .file
+                .map(|f| opts.input_path(&dir.join(f)))
+                .transpose()?,
             ..self
-        }
+        })
     }
 }
 
@@ -129,11 +141,11 @@ pub struct RawFur {
     pub fixed_waveforms: Vec<String>,
 }
 impl RawFur {
-    fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
-        Self {
-            file: opts.input_path(&dir.join(self.file)),
+    fn fix_files(self, opts: &mut Options, dir: &Path) -> Result<Self> {
+        Ok(Self {
+            file: opts.input_path(&dir.join(self.file))?,
             ..self
-        }
+        })
     }
 }
 
@@ -178,11 +190,11 @@ pub struct RawBeepBox {
     pub fixed_waveforms: Vec<String>,
 }
 impl RawBeepBox {
-    fn fix_files(self, opts: &mut Options, dir: &Path) -> Self {
-        Self {
-            file: opts.input_path(&dir.join(self.file)),
+    fn fix_files(self, opts: &mut Options, dir: &Path) -> Result<Self> {
+        Ok(Self {
+            file: opts.input_path(&dir.join(self.file))?,
             ..self
-        }
+        })
     }
 }
 
@@ -201,7 +213,7 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
         furs: BTreeMap::new(),
         beepbox: BTreeMap::new(),
     };
-    let mut files = vec![opts.config_file_path()];
+    let mut files = vec![opts.config_file_path()?];
     while let Some(path) = files.pop() {
         let file = std::fs::read_to_string(&path)
             .with_context(|| format!("could not read config file {}", path.display()))?;
@@ -211,25 +223,27 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
         };
 
         for import in file.imports {
-            files.push(opts.input_path(&dir.join(import)));
+            files.push(opts.input_path(&dir.join(import))?);
         }
 
         for (name, waveform) in file.waveforms {
-            assets.waveforms.insert(name, waveform.fix_files(opts, dir));
+            assets
+                .waveforms
+                .insert(name, waveform.fix_files(opts, dir)?);
         }
 
         for (name, instrument) in file.instruments {
             assets
                 .instruments
-                .insert(name, instrument.fix_files(opts, dir));
+                .insert(name, instrument.fix_files(opts, dir)?);
         }
 
         for (name, fur) in file.furs {
-            assets.furs.insert(name, fur.fix_files(opts, dir));
+            assets.furs.insert(name, fur.fix_files(opts, dir)?);
         }
 
         for (name, beepbox) in file.beepbox {
-            assets.beepbox.insert(name, beepbox.fix_files(opts, dir));
+            assets.beepbox.insert(name, beepbox.fix_files(opts, dir)?);
         }
     }
     Ok(assets)
