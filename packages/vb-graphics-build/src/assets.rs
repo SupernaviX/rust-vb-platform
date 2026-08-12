@@ -394,7 +394,12 @@ impl AssetProcessor {
 
         let mut cells = vec![];
         for shade in shades {
-            let (char, palette) = shades_to_chardata(shade)?;
+            let (char, palette) = shades_to_chardata(shade).with_context(|| {
+                let width_cells = width.div_ceil(8);
+                let (cell_x, cell_y) = (cells.len() % width_cells, cells.len() / width_cells);
+                let (x, y) = (cell_x * 8, cell_y * 8);
+                format!("could not convert 8x8 cell starting at ({x}, {y})")
+            })?;
             let (index, hflip, vflip) = chardata.add_deduped(char);
             cells.push(
                 Cell::new()
@@ -772,7 +777,7 @@ fn shades_to_chardata(shades: [[Shade; 8]; 8]) -> Result<([u16; 8], u8)> {
         }
     }
     if seen_shades.len() == 5 {
-        bail!("Too many shades in a single tile");
+        bail!("too many shades in a single cell");
     }
 
     let black_shade = if !seen_shades.contains(&Shade::Shade1) {
