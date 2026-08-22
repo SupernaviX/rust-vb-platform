@@ -833,6 +833,10 @@ impl CharData {
         self.chars.push(char);
         (index as u16, false, false)
     }
+
+    pub fn size_bytes(&self) -> usize {
+        self.chars.len() * 16
+    }
 }
 
 pub struct ImageData {
@@ -842,6 +846,11 @@ pub struct ImageData {
     chardata: Option<String>,
     pub frame: FrameData,
 }
+impl ImageData {
+    pub fn size_bytes(&self) -> usize {
+        self.frame.size_bytes()
+    }
+}
 
 pub struct AnimationData {
     pub name: String,
@@ -850,10 +859,23 @@ pub struct AnimationData {
     chardata: Option<String>,
     pub frames: Vec<FrameData>,
 }
+impl AnimationData {
+    pub fn size_bytes(&self) -> usize {
+        self.frames.iter().map(FrameData::size_bytes).sum()
+    }
+}
 
 pub enum FrameData {
     Mono(Vec<u16>),
     Stereo { left: Vec<u16>, right: Vec<u16> },
+}
+impl FrameData {
+    pub fn size_bytes(&self) -> usize {
+        match &self {
+            Self::Mono(f) => f.len() * 2,
+            Self::Stereo { left, right } => (left.len() + right.len()) * 2,
+        }
+    }
 }
 
 pub struct BgSpriteMapData {
