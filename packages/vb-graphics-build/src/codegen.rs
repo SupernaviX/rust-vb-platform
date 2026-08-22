@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::{io::Write, path::MAIN_SEPARATOR};
 
 use crate::{
     Options,
@@ -6,12 +6,12 @@ use crate::{
 };
 use anyhow::Result;
 
-pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
+pub fn generate(opts: &mut Options, assets: Assets) -> Result<()> {
     let mut file = opts.output_file("graphics_assets.rs")?;
 
     for chardata in assets.chardata {
         let char_count = chardata.chars.len();
-        let chardata_filename = format!("chardata.{}.bin", chardata.name);
+        let chardata_filename = format!("chardata{MAIN_SEPARATOR}{}.bin", chardata.name);
         let mut chardata_file = opts.output_file(&chardata_filename)?;
         for char in chardata.chars.into_flattened() {
             chardata_file.write_all(&char.to_le_bytes())?;
@@ -192,7 +192,7 @@ pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
     }
 
     for mask in assets.masks {
-        let maskdata_filename = format!("mask.{}.bin", mask.name);
+        let maskdata_filename = format!("mask{MAIN_SEPARATOR}{}.bin", mask.name);
         let mut maskdata_file = opts.output_file(&maskdata_filename)?;
         maskdata_file.write_all(&mask.pixels)?;
         maskdata_file.flush()?;
@@ -214,7 +214,7 @@ pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
     }
 
     for texture in assets.textures {
-        let texturedata_filename = format!("texture.{}.bin", texture.name);
+        let texturedata_filename = format!("texture{MAIN_SEPARATOR}{}.bin", texture.name);
         let mut texturedata_file = opts.output_file(&texturedata_filename)?;
         texturedata_file.write_all(&texture.pixels)?;
         texturedata_file.flush()?;
@@ -236,7 +236,7 @@ pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
     }
 
     for font in assets.fonts {
-        let fontdata_filename = format!("font.{}.bin", font.name);
+        let fontdata_filename = format!("font{MAIN_SEPARATOR}{}.bin", font.name);
         let mut fontdata_file = opts.output_file(&fontdata_filename)?;
         for char in &font.chars {
             fontdata_file.write_all(&char.as_bytes())?;
@@ -277,7 +277,7 @@ pub fn generate(opts: &Options, assets: Assets) -> Result<()> {
 
 fn generate_frame_cells<T>(
     file: &mut T,
-    opts: &Options,
+    opts: &mut Options,
     name: &str,
     frame: &FrameData,
 ) -> Result<()>
@@ -294,12 +294,12 @@ where
     }
 }
 
-fn generate_cells<T>(file: &mut T, opts: &Options, name: &str, cells: &[u16]) -> Result<()>
+fn generate_cells<T>(file: &mut T, opts: &mut Options, name: &str, cells: &[u16]) -> Result<()>
 where
     T: Write,
 {
     let cell_count = cells.len();
-    let celldata_filename = format!("cells.{}.bin", name);
+    let celldata_filename = format!("cells{MAIN_SEPARATOR}{}.bin", name);
     let mut celldata_file = opts.output_file(&celldata_filename)?;
     for cell in cells {
         celldata_file.write_all(&cell.to_le_bytes())?;

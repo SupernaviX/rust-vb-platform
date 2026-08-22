@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, HashSet},
     env,
-    fs::File,
+    fs::{File, create_dir_all},
     io::BufWriter,
     path::{Path, PathBuf},
 };
@@ -15,7 +15,8 @@ pub struct Options {
     input_dir: PathBuf,
     output_dir: PathBuf,
     emit_cargo: bool,
-    seen: HashSet<PathBuf>,
+    seen_input: HashSet<PathBuf>,
+    seen_output: HashSet<PathBuf>,
 }
 
 impl Options {
@@ -25,7 +26,8 @@ impl Options {
             input_dir: env::current_dir()?,
             output_dir: PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR not defined")),
             emit_cargo: true,
-            seen: HashSet::new(),
+            seen_input: HashSet::new(),
+            seen_output: HashSet::new(),
         })
     }
 
@@ -35,7 +37,8 @@ impl Options {
             input_dir,
             output_dir,
             emit_cargo: true,
-            seen: HashSet::new(),
+            seen_input: HashSet::new(),
+            seen_output: HashSet::new(),
         }
     }
 
@@ -54,14 +57,20 @@ impl Options {
             .normalize()
             .with_context(|| format!("could not open file \"{}\"", path.display()))?
             .into_path_buf();
-        if self.emit_cargo && self.seen.insert(result.clone()) {
+        if self.emit_cargo && self.seen_input.insert(result.clone()) {
             println!("cargo:rerun-if-changed={}", result.display());
         }
         Ok(result)
     }
 
-    pub(crate) fn output_file(&self, path: &str) -> Result<BufWriter<File>> {
-        let file = File::create(self.output_dir.join(path))?;
+    pub(crate) fn output_file(&mut self, path: &str) -> Result<BufWriter<File>> {
+        let full_path = self.output_dir.join(path);
+        if let Some(parent) = full_path.parent()
+            && self.seen_output.insert(parent.to_path_buf())
+        {
+            create_dir_all(parent)?;
+        }
+        let file = File::create(full_path)?;
         Ok(BufWriter::new(file))
     }
 }
