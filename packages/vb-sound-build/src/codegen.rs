@@ -3,6 +3,14 @@ use std::{io::Write as _, path::MAIN_SEPARATOR};
 use crate::{Options, assets::Assets};
 use anyhow::Result;
 
+fn include(datatype: &str, filename: &str) -> String {
+    format!(
+        "vb_sound::include_{}!(\"{}\")",
+        datatype,
+        filename.escape_default()
+    )
+}
+
 pub fn generate(opts: &mut Options, assets: Assets) -> Result<()> {
     let mut file = opts.output_file("sound_assets.rs")?;
 
@@ -16,10 +24,10 @@ pub fn generate(opts: &mut Options, assets: Assets) -> Result<()> {
         writeln!(file, "#[allow(dead_code)]")?;
         writeln!(
             file,
-            "pub static {}_WAVEFORMS: vb_sound::WaveformData<{}> = vb_sound::include_waveforms!(\"{}\");",
+            "pub static {}_WAVEFORMS: vb_sound::WaveformData<{}> = {};",
             rust_identifier(&waveforms.name),
             waveforms_bytes.len(),
-            waveforms_filename
+            include("waveforms", &waveforms_filename),
         )?;
     }
 
@@ -32,9 +40,10 @@ pub fn generate(opts: &mut Options, assets: Assets) -> Result<()> {
         writeln!(file, "#[allow(dead_code)]")?;
         writeln!(
             file,
-            "pub static {}: [u32; {}] = vb_sound::include_channel!(\"{channel_filename}\");",
+            "pub static {}: [u32; {}] = {};",
             rust_identifier(&channel.name),
             channel.data.len() / 4,
+            include("channel", &channel_filename),
         )?;
         writeln!(file)?;
     }

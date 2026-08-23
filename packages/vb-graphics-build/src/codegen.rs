@@ -6,6 +6,14 @@ use crate::{
 };
 use anyhow::Result;
 
+fn include(datatype: &str, filename: &str) -> String {
+    format!(
+        "vb_graphics::include_{}!(\"{}\")",
+        datatype,
+        filename.escape_default()
+    )
+}
+
 pub fn generate(opts: &mut Options, assets: Assets) -> Result<()> {
     let mut file = opts.output_file("graphics_assets.rs")?;
 
@@ -21,10 +29,10 @@ pub fn generate(opts: &mut Options, assets: Assets) -> Result<()> {
         writeln!(file, "#[allow(dead_code)]")?;
         writeln!(
             file,
-            "pub static {}: [vb_rt::sys::vip::Character; {}] = vb_graphics::include_chardata!(\"{}\");",
+            "pub static {}: [vb_rt::sys::vip::Character; {}] = {};",
             rust_identifier(&chardata.name),
             char_count,
-            chardata_filename
+            include("chardata", &chardata_filename),
         )?;
         writeln!(file)?;
     }
@@ -207,7 +215,8 @@ pub fn generate(opts: &mut Options, assets: Assets) -> Result<()> {
         writeln!(file, "    height: {},", mask.height)?;
         writeln!(
             file,
-            "    data: vb_graphics::include_maskdata!(\"{maskdata_filename}\"),"
+            "    data: {},",
+            include("maskdata", &maskdata_filename)
         )?;
         writeln!(file, "}};")?;
         writeln!(file)?;
@@ -229,7 +238,8 @@ pub fn generate(opts: &mut Options, assets: Assets) -> Result<()> {
         writeln!(file, "    height: {},", texture.height)?;
         writeln!(
             file,
-            "    data: vb_graphics::include_texturedata!(\"{texturedata_filename}\"),",
+            "    data: {},",
+            include("texturedata", &texturedata_filename)
         )?;
         writeln!(file, "}};")?;
         writeln!(file)?;
@@ -245,10 +255,10 @@ pub fn generate(opts: &mut Options, assets: Assets) -> Result<()> {
 
         writeln!(
             file,
-            "static {}_CHARDATA: [vb_graphics::FontCharacter; {}] = vb_graphics::include_fontdata!(\"{}\");",
+            "static {}_CHARDATA: [vb_graphics::FontCharacter; {}] = {};",
             rust_identifier(&font.name),
             font.chars.len(),
-            fontdata_filename,
+            include("fontdata", &fontdata_filename),
         )?;
         writeln!(file, "#[allow(dead_code)]")?;
         writeln!(
@@ -308,10 +318,10 @@ where
 
     writeln!(
         file,
-        "static {}_CELLS: [vb_rt::sys::vip::Cell; {}] = vb_graphics::include_celldata!(\"{}\");",
+        "static {}_CELLS: [vb_rt::sys::vip::Cell; {}] = {};",
         rust_identifier(name),
         cell_count,
-        celldata_filename,
+        include("celldata", &celldata_filename),
     )?;
     Ok(())
 }
