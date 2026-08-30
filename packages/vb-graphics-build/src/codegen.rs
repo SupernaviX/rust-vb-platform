@@ -17,22 +17,22 @@ fn include(datatype: &str, filename: &str) -> String {
 pub fn generate(opts: &mut Options, assets: Assets) -> Result<()> {
     let mut file = opts.output_file("graphics_assets.rs")?;
 
-    for chardata in assets.chardata {
-        let char_count = chardata.chars.len();
-        let chardata_filename = format!("chardata{MAIN_SEPARATOR}{}.bin", chardata.name);
-        let mut chardata_file = opts.output_file(&chardata_filename)?;
-        for char in chardata.chars.into_flattened() {
-            chardata_file.write_all(&char.to_le_bytes())?;
+    for tileset in assets.tilesets {
+        let tile_count = tileset.tiles.len();
+        let tileset_filename = format!("tilesets{MAIN_SEPARATOR}{}.bin", tileset.name);
+        let mut tileset_file = opts.output_file(&tileset_filename)?;
+        for word in tileset.tiles.into_flattened() {
+            tileset_file.write_all(&word.to_le_bytes())?;
         }
-        chardata_file.flush()?;
+        tileset_file.flush()?;
 
         writeln!(file, "#[allow(dead_code)]")?;
         writeln!(
             file,
             "pub static {}: [vb_rt::sys::vip::Character; {}] = {};",
-            rust_identifier(&chardata.name),
-            char_count,
-            include("chardata", &chardata_filename),
+            rust_identifier(&tileset.name),
+            tile_count,
+            include("tilesetdata", &tileset_filename),
         )?;
         writeln!(file)?;
     }
@@ -170,21 +170,21 @@ pub fn generate(opts: &mut Options, assets: Assets) -> Result<()> {
                 }
             }
         }
-        if !bg_sprite_map.chardatas.is_empty() {
+        if !bg_sprite_map.tilesets.is_empty() {
             writeln!(file)?;
         }
-        for chardata in bg_sprite_map.chardatas {
+        for tileset in bg_sprite_map.tilesets {
             writeln!(
                 file,
                 "    pub fn load_{}(char_offset: u16) {{",
-                chardata.replace("-", "_")
+                tileset.replace("-", "_")
             )?;
             for sprite in &bg_sprite_map.sprites {
                 let Some(image) = &sprite.image else {
                     continue;
                 };
                 let load_method = if image.stereo { "load_stereo" } else { "load" };
-                if image.chardata.as_ref().is_some_and(|c| c == &chardata) {
+                if image.tileset.as_ref().is_some_and(|c| c == &tileset) {
                     writeln!(
                         file,
                         "        {}.{load_method}(super::{}, char_offset);",

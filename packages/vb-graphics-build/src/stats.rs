@@ -10,11 +10,11 @@ pub fn generate(opts: &mut Options, assets: &Assets) -> Result<Stats> {
         tiles: BTreeMap::new(),
     };
 
-    for chardata in &assets.chardata {
-        stats.total_bytes += chardata.size_bytes();
+    for tileset in &assets.tilesets {
+        stats.total_bytes += tileset.size_bytes();
         stats
             .tiles
-            .insert(chardata.name.clone(), chardata.chars.len());
+            .insert(tileset.name.clone(), tileset.tiles.len());
     }
     for image in &assets.images {
         stats.total_bytes += image.size_bytes();

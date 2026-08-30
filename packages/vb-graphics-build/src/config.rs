@@ -62,7 +62,7 @@ impl Options {
 
 #[derive(Deserialize, Debug)]
 struct RawAnimationSerde {
-    chardata: Option<String>,
+    tileset: Option<String>,
     #[serde(default)]
     palette: Option<[u8; 3]>,
     frames: Vec<RawImageData>,
@@ -70,13 +70,13 @@ struct RawAnimationSerde {
 impl From<RawAnimationSerde> for RawAnimation {
     fn from(value: RawAnimationSerde) -> Self {
         Self {
-            chardata: value.chardata.clone(),
+            tileset: value.tileset.clone(),
             palette: value.palette,
             images: value
                 .frames
                 .into_iter()
                 .map(|f| RawImage {
-                    chardata: value.chardata.clone(),
+                    tileset: value.tileset.clone(),
                     palette: value.palette,
                     data: f,
                 })
@@ -107,7 +107,7 @@ struct RawAssetFile {
 
 #[derive(Deserialize, Debug)]
 struct RawSpritesheet {
-    chardata: Option<String>,
+    tileset: Option<String>,
     #[serde(default)]
     palette: Option<[u8; 3]>,
     file: PathBuf,
@@ -204,14 +204,14 @@ pub struct RawAssets {
 
 #[derive(Debug)]
 pub struct RawAnimation {
-    pub chardata: Option<String>,
+    pub tileset: Option<String>,
     pub palette: Option<[u8; 3]>,
     pub images: Vec<RawImage>,
 }
 impl RawAnimation {
     fn fix(self, opts: &mut Options, dir: &Path, palette: Option<[u8; 3]>) -> Result<Self> {
         Ok(Self {
-            chardata: self.chardata,
+            tileset: self.tileset,
             palette: self.palette.or(palette),
             images: self
                 .images
@@ -224,7 +224,7 @@ impl RawAnimation {
 
 #[derive(Deserialize, Debug)]
 pub struct RawImage {
-    pub chardata: Option<String>,
+    pub tileset: Option<String>,
     #[serde(default)]
     pub palette: Option<[u8; 3]>,
     #[serde(flatten)]
@@ -457,7 +457,7 @@ fn parse_spritesheet(path: &Path) -> Result<ParsedSpritesheet> {
         }
     };
     let sprite_to_image = |sprite: RawSprite| RawImage {
-        chardata: file.chardata.clone(),
+        tileset: file.tileset.clone(),
         palette,
         data: match sprite {
             RawSprite::Mono(data) => RawImageData::Mono(data_to_region(data)),
@@ -482,7 +482,7 @@ fn parse_spritesheet(path: &Path) -> Result<ParsedSpritesheet> {
         animations.push((
             name,
             RawAnimation {
-                chardata: file.chardata.clone(),
+                tileset: file.tileset.clone(),
                 palette,
                 images: animation.into_iter().map(sprite_to_image).collect(),
             },

@@ -22,7 +22,7 @@ fn main() {
     gfx::init_display();
     gfx::set_colors(32, 64, 32);
     gfx::set_bkcol(0);
-    gfx::load_character_data(&assets::ALL, 0);
+    gfx::load_tileset(&assets::ALL, 0);
 
     snd::WAVEFORMS.load(&assets::WALTZ_WAVEFORMS);
     snd::CHANNELS[0].play(&assets::WALTZ_0);

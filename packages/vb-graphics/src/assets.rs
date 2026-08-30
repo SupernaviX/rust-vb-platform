@@ -460,7 +460,7 @@ macro_rules! out_path {
 }
 
 #[macro_export]
-macro_rules! include_chardata {
+macro_rules! include_tilesetdata {
     ($path:expr) => {
         $crate::resource_value_impl!(4, include_bytes!($crate::out_path!($path)))
     };

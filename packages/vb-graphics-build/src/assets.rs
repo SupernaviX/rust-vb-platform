@@ -72,7 +72,7 @@ struct AssetProcessor {
     pngs: PngAtlas,
     fonts: FontAtlas,
     effect_data: BTreeMap<String, FrameCells>,
-    chardata: BTreeMap<String, CharData>,
+    tilesetdata: BTreeMap<String, TilesetData>,
     animationdata: BTreeMap<String, AnimationData>,
     imagedata: BTreeMap<String, ImageData>,
     bgspritemapdata: BTreeMap<String, BgSpriteMapData>,
@@ -87,7 +87,7 @@ impl AssetProcessor {
             pngs: PngAtlas::new(),
             fonts: FontAtlas::new(),
             effect_data: BTreeMap::new(),
-            chardata: BTreeMap::new(),
+            tilesetdata: BTreeMap::new(),
             animationdata: BTreeMap::new(),
             imagedata: BTreeMap::new(),
             bgspritemapdata: BTreeMap::new(),
@@ -156,7 +156,7 @@ impl AssetProcessor {
             self.process_bg_sprite_map(name, sprite_map)?;
         }
         Ok(Assets {
-            chardata: self.chardata.into_values().collect(),
+            tilesets: self.tilesetdata.into_values().collect(),
             images: self.imagedata.into_values().collect(),
             animations: self.animationdata.into_values().collect(),
             bg_sprite_maps: self.bgspritemapdata.into_values().collect(),
@@ -214,10 +214,10 @@ impl AssetProcessor {
     }
 
     fn process_image(&mut self, name: String, image: RawImage) -> Result<()> {
-        let chardata = image.chardata.clone();
-        let real_chardata = chardata.clone().unwrap_or(name.clone());
+        let tileset = image.tileset.clone();
+        let real_tileset = tileset.clone().unwrap_or(name.clone());
         let (width, height, frame) = self
-            .extract_image(image, real_chardata)
+            .extract_image(image, real_tileset)
             .context(format!("could not parse {name}"))?;
         self.imagedata.insert(
             name.clone(),
@@ -225,7 +225,7 @@ impl AssetProcessor {
                 name,
                 width,
                 height,
-                chardata,
+                tileset,
                 frame,
             },
         );
@@ -236,9 +236,9 @@ impl AssetProcessor {
         let mut frames = vec![];
         let mut size = None;
         for (index, image) in animation.images.into_iter().enumerate() {
-            let real_chardata = image.chardata.clone().unwrap_or(format!("{name}-{index}"));
+            let real_tileset = image.tileset.clone().unwrap_or(format!("{name}-{index}"));
             let (frame_width, frame_height, frame) = self
-                .extract_image(image, real_chardata)
+                .extract_image(image, real_tileset)
                 .context(format!("could not parse frame {index} of {name}"))?;
             size = size.or(Some((frame_width, frame_height)));
             if size != Some((frame_width, frame_height)) {
@@ -255,7 +255,7 @@ impl AssetProcessor {
                 name,
                 width,
                 height,
-                chardata: animation.chardata,
+                tileset: animation.tileset,
                 frames,
             },
         );
@@ -265,12 +265,12 @@ impl AssetProcessor {
     fn extract_image(
         &mut self,
         image: RawImage,
-        chardata: String,
+        tileset: String,
     ) -> Result<(usize, usize, FrameData)> {
         match image.data {
             RawImageData::Mono(region) => {
                 let (width, height, cells) = self.extract_region(
-                    chardata,
+                    tileset,
                     image.palette,
                     region,
                     &ImageEffects::default(),
@@ -283,15 +283,10 @@ impl AssetProcessor {
                 right,
                 effects,
             } => {
-                let (width_l, height_l, left) = self.extract_region(
-                    chardata.clone(),
-                    image.palette,
-                    left,
-                    &effects,
-                    Eye::Left,
-                )?;
+                let (width_l, height_l, left) =
+                    self.extract_region(tileset.clone(), image.palette, left, &effects, Eye::Left)?;
                 let (width_r, height_r, right) =
-                    self.extract_region(chardata, image.palette, right, &effects, Eye::Right)?;
+                    self.extract_region(tileset, image.palette, right, &effects, Eye::Right)?;
                 if width_l != width_r || height_l != height_r {
                     bail!("left and right images must be same size");
                 }
@@ -302,7 +297,7 @@ impl AssetProcessor {
 
     fn extract_region(
         &mut self,
-        chardata: String,
+        tileset: String,
         palette: Option<[u8; 3]>,
         region: RawImageRegion,
         effects: &ImageEffects,
@@ -384,23 +379,23 @@ impl AssetProcessor {
             }
         }
 
-        let chardata = self
-            .chardata
-            .entry(chardata)
-            .or_insert_with_key(|name| CharData {
+        let tileset = self
+            .tilesetdata
+            .entry(tileset)
+            .or_insert_with_key(|name| TilesetData {
                 name: name.clone(),
-                chars: vec![[0; 8]],
+                tiles: vec![[0; 8]],
             });
 
         let mut cells = vec![];
         for shade in shades {
-            let (char, palette) = shades_to_chardata(shade).with_context(|| {
+            let (tile, palette) = shades_to_tile(shade).with_context(|| {
                 let width_cells = width.div_ceil(8);
                 let (cell_x, cell_y) = (cells.len() % width_cells, cells.len() / width_cells);
                 let (x, y) = (cell_x * 8, cell_y * 8);
                 format!("could not convert 8x8 cell starting at ({x}, {y})")
             })?;
-            let (index, hflip, vflip) = chardata.add_deduped(char);
+            let (index, hflip, vflip) = tileset.add_deduped(tile);
             cells.push(
                 Cell::new()
                     .with_character(index)
@@ -447,7 +442,7 @@ impl AssetProcessor {
         } else {
             Packer::new(raw.bgmap_start)
         };
-        let mut chardatas = BTreeSet::new();
+        let mut tilesets = BTreeSet::new();
         let mut processed_sprites = vec![];
         let mut unplaced_regions = vec![];
         for (name, sprite) in raw.sprites {
@@ -506,7 +501,7 @@ impl AssetProcessor {
                             }),
                             Some(ImageRefData {
                                 name: image,
-                                chardata: data.chardata.clone(),
+                                tileset: data.tileset.clone(),
                                 stereo,
                             }),
                             stereo,
@@ -529,7 +524,7 @@ impl AssetProcessor {
                             }),
                             Some(ImageRefData {
                                 name: image,
-                                chardata: data.chardata.clone(),
+                                tileset: data.tileset.clone(),
                                 stereo,
                             }),
                             stereo,
@@ -539,8 +534,8 @@ impl AssetProcessor {
                     }
                 }
             };
-            if let Some(chardata) = image.as_ref().and_then(|i| i.chardata.as_ref()) {
-                chardatas.insert(chardata.clone());
+            if let Some(tileset) = image.as_ref().and_then(|i| i.tileset.as_ref()) {
+                tilesets.insert(tileset.clone());
             }
             match &kind {
                 BgSpriteKind::Image(data) => {
@@ -586,7 +581,7 @@ impl AssetProcessor {
             BgSpriteMapData {
                 name,
                 sprites,
-                chardatas: chardatas.into_iter().collect(),
+                tilesets: tilesets.into_iter().collect(),
                 packer,
             },
         );
@@ -768,8 +763,8 @@ struct ImageRegion {
     transform: Transform,
 }
 
-fn shades_to_chardata(shades: [[Shade; 8]; 8]) -> Result<([u16; 8], u8)> {
-    let mut char = [0; 8];
+fn shades_to_tile(shades: [[Shade; 8]; 8]) -> Result<([u16; 8], u8)> {
+    let mut tile = [0; 8];
     let mut seen_shades = vec![];
     for shade in shades.iter().copied().flatten() {
         if !seen_shades.contains(&shade) {
@@ -790,7 +785,7 @@ fn shades_to_chardata(shades: [[Shade; 8]; 8]) -> Result<([u16; 8], u8)> {
         0
     };
 
-    for (dst_row, src_row) in char.iter_mut().zip(shades) {
+    for (dst_row, src_row) in tile.iter_mut().zip(shades) {
         for (x, src) in src_row.iter().enumerate() {
             let new_value = match src {
                 Shade::Transparent => 0,
@@ -802,11 +797,11 @@ fn shades_to_chardata(shades: [[Shade; 8]; 8]) -> Result<([u16; 8], u8)> {
             *dst_row |= new_value << (x * 2);
         }
     }
-    Ok((char, black_shade as u8))
+    Ok((tile, black_shade as u8))
 }
 
 pub struct Assets {
-    pub chardata: Vec<CharData>,
+    pub tilesets: Vec<TilesetData>,
     pub images: Vec<ImageData>,
     pub animations: Vec<AnimationData>,
     pub bg_sprite_maps: Vec<BgSpriteMapData>,
@@ -815,27 +810,27 @@ pub struct Assets {
     pub fonts: Vec<FontData>,
 }
 
-pub struct CharData {
+pub struct TilesetData {
     pub name: String,
-    pub chars: Vec<[u16; 8]>,
+    pub tiles: Vec<[u16; 8]>,
 }
-impl CharData {
-    fn add_deduped(&mut self, char: [u16; 8]) -> (u16, bool, bool) {
+impl TilesetData {
+    fn add_deduped(&mut self, tile: [u16; 8]) -> (u16, bool, bool) {
         for v_flip in [false, true] {
             for h_flip in [false, true] {
-                let transformed_char = flip_char(char, h_flip, v_flip);
-                if let Some(index) = self.chars.iter().position(|c| c == &transformed_char) {
+                let transformed_tile = flip_tile(tile, h_flip, v_flip);
+                if let Some(index) = self.tiles.iter().position(|c| c == &transformed_tile) {
                     return (index as u16, h_flip, v_flip);
                 }
             }
         }
-        let index = self.chars.len();
-        self.chars.push(char);
+        let index = self.tiles.len();
+        self.tiles.push(tile);
         (index as u16, false, false)
     }
 
     pub fn size_bytes(&self) -> usize {
-        self.chars.len() * 16
+        self.tiles.len() * 16
     }
 }
 
@@ -843,7 +838,7 @@ pub struct ImageData {
     pub name: String,
     pub width: usize,
     pub height: usize,
-    chardata: Option<String>,
+    tileset: Option<String>,
     pub frame: FrameData,
 }
 impl ImageData {
@@ -856,7 +851,7 @@ pub struct AnimationData {
     pub name: String,
     pub width: usize,
     pub height: usize,
-    chardata: Option<String>,
+    tileset: Option<String>,
     pub frames: Vec<FrameData>,
 }
 impl AnimationData {
@@ -881,7 +876,7 @@ impl FrameData {
 pub struct BgSpriteMapData {
     pub name: String,
     pub sprites: Vec<BgSpriteData>,
-    pub chardatas: Vec<String>,
+    pub tilesets: Vec<String>,
     packer: Packer,
 }
 
@@ -924,7 +919,7 @@ pub struct BgSpriteAnimationData {
 #[derive(Debug)]
 pub struct ImageRefData {
     pub name: String,
-    pub chardata: Option<String>,
+    pub tileset: Option<String>,
     pub stereo: bool,
 }
 
@@ -965,8 +960,8 @@ impl FontCharacterData {
     }
 }
 
-fn flip_char(char: [u16; 8], h_flip: bool, v_flip: bool) -> [u16; 8] {
-    let mut result = char;
+fn flip_tile(tile: [u16; 8], h_flip: bool, v_flip: bool) -> [u16; 8] {
+    let mut result = tile;
     if v_flip {
         result.reverse();
     }

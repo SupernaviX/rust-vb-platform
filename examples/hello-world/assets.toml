@@ -1,7 +1,7 @@
 [image.background]
-chardata = "all"
+tileset = "all"
 file = "assets/background.png"
 
 [image.smile]
-chardata = "all"
+tileset = "all"
 file = "assets/smile.png"

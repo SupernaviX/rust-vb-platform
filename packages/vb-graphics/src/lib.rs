@@ -50,7 +50,7 @@ pub fn set_bkcol(value: u16) {
     vip::BKCOL.write(value);
 }
 
-pub fn load_character_data(data: &[vip::Character], index: usize) {
+pub fn load_tileset(data: &[vip::Character], index: usize) {
     vip::CHARACTERS.write_slice(data, index);
 }
 

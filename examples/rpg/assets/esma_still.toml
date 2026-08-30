@@ -1,4 +1,4 @@
-chardata = "all"
+tileset = "all"
 file = "esma_still.png"
 sprite_size = [16, 16]
 
