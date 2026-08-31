@@ -22,8 +22,11 @@ fn main() {
     const TEXT_WIDTH_CHARS: u8 = 34;
     const TEXT_HEIGHT_CHARS: u8 = 8;
 
-    let mut renderer =
-        TextRenderer::new(&assets::ALAGARD, 16, (TEXT_WIDTH_CHARS, TEXT_HEIGHT_CHARS));
+    let mut renderer = TextRenderer::new(
+        &assets::fonts::ALAGARD,
+        16,
+        (TEXT_WIDTH_CHARS, TEXT_HEIGHT_CHARS),
+    );
     renderer.draw_text(b"I can render fonts from TTF files,\nbut it is uglier than I hoped...\nActually this font looks much nicer!");
     renderer.render_to_bgmap(0, (0, 0));
 

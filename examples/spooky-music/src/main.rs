@@ -20,11 +20,11 @@ fn main() {
     gfx::init_display();
     gfx::set_colors(32, 64, 32);
     gfx::set_bkcol(0);
-    snd::WAVEFORMS.load(&assets::CHIRAX_WAVEFORMS);
-    snd::CHANNELS[0].play(&assets::CHIRAX_0);
-    snd::CHANNELS[1].play(&assets::CHIRAX_1);
-    snd::CHANNELS[2].play(&assets::CHIRAX_2);
-    snd::CHANNELS[5].play(&assets::CHIRAX_5);
+    snd::WAVEFORMS.load(&assets::waveform_sets::CHIRAX);
+    snd::CHANNELS[0].play(&assets::channels::CHIRAX_0);
+    snd::CHANNELS[1].play(&assets::channels::CHIRAX_1);
+    snd::CHANNELS[2].play(&assets::channels::CHIRAX_2);
+    snd::CHANNELS[5].play(&assets::channels::CHIRAX_5);
     // gfx::load_character_data(&assets::ALL, 0);
 
     FRAME.enable_interrupts();
@@ -36,9 +36,9 @@ fn main() {
         let a_pressed = pressed.a();
         if a_pressed && !was_a_pressed {
             if snd::CHANNELS[4].playing_overlay() {
-                snd::CHANNELS[2].play_overlay(&assets::HURT_4);
+                snd::CHANNELS[2].play_overlay(&assets::channels::HURT_4);
             } else {
-                snd::CHANNELS[4].play_overlay(&assets::HURT_4);
+                snd::CHANNELS[4].play_overlay(&assets::channels::HURT_4);
             }
         }
         was_a_pressed = a_pressed;

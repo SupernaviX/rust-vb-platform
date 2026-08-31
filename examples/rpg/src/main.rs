@@ -22,15 +22,15 @@ fn main() {
     gfx::init_display();
     gfx::set_colors(32, 64, 32);
     gfx::set_bkcol(0);
-    gfx::load_tileset(&assets::ALL, 0);
+    gfx::load_tileset(&assets::tilesets::ALL, 0);
 
-    snd::WAVEFORMS.load(&assets::WALTZ_WAVEFORMS);
-    snd::CHANNELS[0].play(&assets::WALTZ_0);
-    snd::CHANNELS[1].play(&assets::WALTZ_1);
-    snd::CHANNELS[2].play(&assets::WALTZ_2);
-    snd::CHANNELS[5].play(&assets::WALTZ_5);
+    snd::WAVEFORMS.load(&assets::waveform_sets::WALTZ);
+    snd::CHANNELS[0].play(&assets::channels::WALTZ_0);
+    snd::CHANNELS[1].play(&assets::channels::WALTZ_1);
+    snd::CHANNELS[2].play(&assets::channels::WALTZ_2);
+    snd::CHANNELS[5].play(&assets::channels::WALTZ_5);
 
-    assets::all::load_all(0);
+    assets::atlases::all::load_all(0);
 
     FRAME.enable_interrupts();
 
@@ -83,7 +83,7 @@ impl Player {
         world.h().write(sprite.height - 1);
     }
     const fn sprite(&self) -> BgSprite {
-        use assets::all::*;
+        use assets::atlases::all::*;
         if let Some(frame) = self.moving_frame {
             match self.dir {
                 Direction::Left => WALK_LEFT,

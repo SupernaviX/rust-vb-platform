@@ -19,9 +19,6 @@ pub fn generate(opts: &mut Options, assets: &Assets) -> Result<Stats> {
     for image in &assets.images {
         stats.total_bytes += image.size_bytes();
     }
-    for animation in &assets.animations {
-        stats.total_bytes += animation.size_bytes();
-    }
     for mask in &assets.masks {
         stats.total_bytes += mask.pixels.len();
     }

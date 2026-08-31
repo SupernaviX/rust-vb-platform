@@ -73,7 +73,6 @@ struct AssetProcessor {
     fonts: FontAtlas,
     effect_data: BTreeMap<String, FrameCells>,
     tilesetdata: BTreeMap<String, TilesetData>,
-    animationdata: BTreeMap<String, AnimationData>,
     imagedata: BTreeMap<String, ImageData>,
     bgatlasdata: BTreeMap<String, BgAtlasData>,
     maskdata: BTreeMap<String, MaskData>,
@@ -88,7 +87,6 @@ impl AssetProcessor {
             fonts: FontAtlas::new(),
             effect_data: BTreeMap::new(),
             tilesetdata: BTreeMap::new(),
-            animationdata: BTreeMap::new(),
             imagedata: BTreeMap::new(),
             bgatlasdata: BTreeMap::new(),
             maskdata: BTreeMap::new(),
@@ -158,7 +156,6 @@ impl AssetProcessor {
         Ok(Assets {
             tilesets: self.tilesetdata.into_values().collect(),
             images: self.imagedata.into_values().collect(),
-            animations: self.animationdata.into_values().collect(),
             bg_atlases: self.bgatlasdata.into_values().collect(),
             masks: self.maskdata.into_values().collect(),
             textures: self.texturedata.into_values().collect(),
@@ -226,7 +223,7 @@ impl AssetProcessor {
                 width,
                 height,
                 tileset,
-                frame,
+                frames: Frames::Static(frame),
             },
         );
         Ok(())
@@ -249,14 +246,14 @@ impl AssetProcessor {
         let Some((width, height)) = size else {
             bail!("animation \"{name}\" has no frames");
         };
-        self.animationdata.insert(
+        self.imagedata.insert(
             name.clone(),
-            AnimationData {
+            ImageData {
                 name,
                 width,
                 height,
                 tileset: animation.tileset,
-                frames,
+                frames: Frames::Animation(frames),
             },
         );
         Ok(())
@@ -492,45 +489,46 @@ impl AssetProcessor {
                     false,
                 ),
                 RawBgSprite::Image { image } => {
-                    if let Some(data) = self.imagedata.get(&image) {
-                        let stereo = matches!(data.frame, FrameData::Stereo { .. });
-                        (
-                            BgSpriteKind::Image(BgSpriteImageData {
-                                width: data.width,
-                                height: data.height,
-                            }),
-                            Some(ImageRefData {
-                                name: image,
-                                tileset: data.tileset.clone(),
-                                stereo,
-                            }),
-                            stereo,
-                        )
-                    } else if let Some(data) = self.animationdata.get(&image) {
-                        let stereo = matches!(data.frames[0], FrameData::Stereo { .. });
-                        let frame_width = data.width;
-                        let frame_height = data.height;
-                        let (columns, rows) = animation_layout(
-                            (frame_width, frame_height),
-                            data.frames.len(),
-                            stereo,
-                        );
-                        (
-                            BgSpriteKind::Animation(BgSpriteAnimationData {
-                                frame_width,
-                                frame_height,
-                                columns,
-                                rows,
-                            }),
-                            Some(ImageRefData {
-                                name: image,
-                                tileset: data.tileset.clone(),
-                                stereo,
-                            }),
-                            stereo,
-                        )
-                    } else {
+                    let Some(data) = self.imagedata.get(&image) else {
                         bail!("unrecognized image \"{image}\" in bg atlas \"{name}\"");
+                    };
+                    match &data.frames {
+                        Frames::Static(frame) => {
+                            let stereo = matches!(frame, FrameData::Stereo { .. });
+                            (
+                                BgSpriteKind::Image(BgSpriteImageData {
+                                    width: data.width,
+                                    height: data.height,
+                                }),
+                                Some(ImageRefData {
+                                    name: image,
+                                    tileset: data.tileset.clone(),
+                                    stereo,
+                                }),
+                                stereo,
+                            )
+                        }
+                        Frames::Animation(frames) => {
+                            let stereo = matches!(frames[0], FrameData::Stereo { .. });
+                            let frame_width = data.width;
+                            let frame_height = data.height;
+                            let (columns, rows) =
+                                animation_layout((frame_width, frame_height), frames.len(), stereo);
+                            (
+                                BgSpriteKind::Animation(BgSpriteAnimationData {
+                                    frame_width,
+                                    frame_height,
+                                    columns,
+                                    rows,
+                                }),
+                                Some(ImageRefData {
+                                    name: image,
+                                    tileset: data.tileset.clone(),
+                                    stereo,
+                                }),
+                                stereo,
+                            )
+                        }
                     }
                 }
             };
@@ -803,7 +801,6 @@ fn shades_to_tile(shades: [[Shade; 8]; 8]) -> Result<([u16; 8], u8)> {
 pub struct Assets {
     pub tilesets: Vec<TilesetData>,
     pub images: Vec<ImageData>,
-    pub animations: Vec<AnimationData>,
     pub bg_atlases: Vec<BgAtlasData>,
     pub masks: Vec<MaskData>,
     pub textures: Vec<TextureData>,
@@ -839,25 +836,21 @@ pub struct ImageData {
     pub width: usize,
     pub height: usize,
     tileset: Option<String>,
-    pub frame: FrameData,
+    pub frames: Frames,
 }
+
 impl ImageData {
     pub fn size_bytes(&self) -> usize {
-        self.frame.size_bytes()
+        match &self.frames {
+            Frames::Static(frame) => frame.size_bytes(),
+            Frames::Animation(frames) => frames.iter().map(FrameData::size_bytes).sum(),
+        }
     }
 }
 
-pub struct AnimationData {
-    pub name: String,
-    pub width: usize,
-    pub height: usize,
-    tileset: Option<String>,
-    pub frames: Vec<FrameData>,
-}
-impl AnimationData {
-    pub fn size_bytes(&self) -> usize {
-        self.frames.iter().map(FrameData::size_bytes).sum()
-    }
+pub enum Frames {
+    Static(FrameData),
+    Animation(Vec<FrameData>),
 }
 
 pub enum FrameData {

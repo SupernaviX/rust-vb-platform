@@ -22,10 +22,10 @@ fn main() {
     gfx::init_display();
     gfx::set_colors(32, 64, 32);
     gfx::set_bkcol(0);
-    gfx::load_tileset(&assets::ALL, 0);
+    gfx::load_tileset(&assets::tilesets::ALL, 0);
 
-    assets::BACKGROUND.render_to_bgmap(0, (0, 0));
-    assets::SMILE.render_to_bgmap(0, (48, 0));
+    assets::images::BACKGROUND.render_to_bgmap(0, (0, 0));
+    assets::images::SMILE.render_to_bgmap(0, (48, 0));
 
     FRAME.enable_interrupts();
 
