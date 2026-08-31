@@ -124,9 +124,9 @@ pub fn generate(opts: &mut Options, assets: Assets) -> Result<()> {
         writeln!(file)?;
     }
 
-    for bg_sprite_map in assets.bg_sprite_maps {
-        writeln!(file, "pub mod {} {{", bg_sprite_map.name.replace("-", "_"))?;
-        for sprite in &bg_sprite_map.sprites {
+    for bg_atlas in assets.bg_atlases {
+        writeln!(file, "pub mod {} {{", bg_atlas.name.replace("-", "_"))?;
+        for sprite in &bg_atlas.sprites {
             let name = rust_identifier(&sprite.name);
             match &sprite.kind {
                 BgSpriteKind::Image(data) => {
@@ -170,16 +170,16 @@ pub fn generate(opts: &mut Options, assets: Assets) -> Result<()> {
                 }
             }
         }
-        if !bg_sprite_map.tilesets.is_empty() {
+        if !bg_atlas.tilesets.is_empty() {
             writeln!(file)?;
         }
-        for tileset in bg_sprite_map.tilesets {
+        for tileset in bg_atlas.tilesets {
             writeln!(
                 file,
                 "    pub fn load_{}(char_offset: u16) {{",
                 tileset.replace("-", "_")
             )?;
-            for sprite in &bg_sprite_map.sprites {
+            for sprite in &bg_atlas.sprites {
                 let Some(image) = &sprite.image else {
                     continue;
                 };

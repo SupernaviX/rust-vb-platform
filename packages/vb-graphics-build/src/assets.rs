@@ -14,7 +14,7 @@ use crate::{
         png::{PngContents, PngView},
     },
     config::{
-        ImageEffects, RawAnimation, RawAssets, RawBgSprite, RawBgSpriteMap, RawFont, RawImage,
+        ImageEffects, RawAnimation, RawAssets, RawBgAtlas, RawBgSprite, RawFont, RawImage,
         RawImageData, RawImageRegion, RawMask,
     },
 };
@@ -75,7 +75,7 @@ struct AssetProcessor {
     tilesetdata: BTreeMap<String, TilesetData>,
     animationdata: BTreeMap<String, AnimationData>,
     imagedata: BTreeMap<String, ImageData>,
-    bgspritemapdata: BTreeMap<String, BgSpriteMapData>,
+    bgatlasdata: BTreeMap<String, BgAtlasData>,
     maskdata: BTreeMap<String, MaskData>,
     texturedata: BTreeMap<String, TextureData>,
     fontdata: BTreeMap<String, FontData>,
@@ -90,7 +90,7 @@ impl AssetProcessor {
             tilesetdata: BTreeMap::new(),
             animationdata: BTreeMap::new(),
             imagedata: BTreeMap::new(),
-            bgspritemapdata: BTreeMap::new(),
+            bgatlasdata: BTreeMap::new(),
             maskdata: BTreeMap::new(),
             texturedata: BTreeMap::new(),
             fontdata: BTreeMap::new(),
@@ -141,25 +141,25 @@ impl AssetProcessor {
         for (name, font) in assets.fonts {
             self.process_font(name, font)?;
         }
-        while let Some((name, sprite_map)) = assets.bg_sprite_maps.pop_first() {
-            let mut current_base = sprite_map.base.clone();
-            let mut sprite_map_queue = vec![];
+        while let Some((name, bg_atlas)) = assets.bg_atlases.pop_first() {
+            let mut current_base = bg_atlas.base.clone();
+            let mut bg_atlas_queue = vec![];
             while let Some(base) = current_base.take() {
-                if let Some(base_map) = assets.bg_sprite_maps.remove(&base) {
-                    current_base = base_map.base.clone();
-                    sprite_map_queue.push((base, base_map));
+                if let Some(base_atlas) = assets.bg_atlases.remove(&base) {
+                    current_base = base_atlas.base.clone();
+                    bg_atlas_queue.push((base, base_atlas));
                 }
             }
-            for (name, sprite_map) in sprite_map_queue.into_iter().rev() {
-                self.process_bg_sprite_map(name, sprite_map)?;
+            for (name, bg_atlas) in bg_atlas_queue.into_iter().rev() {
+                self.process_bg_atlas(name, bg_atlas)?;
             }
-            self.process_bg_sprite_map(name, sprite_map)?;
+            self.process_bg_atlas(name, bg_atlas)?;
         }
         Ok(Assets {
             tilesets: self.tilesetdata.into_values().collect(),
             images: self.imagedata.into_values().collect(),
             animations: self.animationdata.into_values().collect(),
-            bg_sprite_maps: self.bgspritemapdata.into_values().collect(),
+            bg_atlases: self.bgatlasdata.into_values().collect(),
             masks: self.maskdata.into_values().collect(),
             textures: self.texturedata.into_values().collect(),
             fonts: self.fontdata.into_values().collect(),
@@ -433,10 +433,10 @@ impl AssetProcessor {
         Ok((width, height, cells))
     }
 
-    fn process_bg_sprite_map(&mut self, name: String, raw: RawBgSpriteMap) -> Result<()> {
+    fn process_bg_atlas(&mut self, name: String, raw: RawBgAtlas) -> Result<()> {
         let mut packer = if let Some(base_name) = raw.base {
-            let Some(base) = self.bgspritemapdata.get(&base_name) else {
-                bail!("sprite map \"{name}\" has nonexistent base \"{base_name}\"");
+            let Some(base) = self.bgatlasdata.get(&base_name) else {
+                bail!("bg atlas \"{name}\" has nonexistent base \"{base_name}\"");
             };
             base.packer.clone()
         } else {
@@ -530,7 +530,7 @@ impl AssetProcessor {
                             stereo,
                         )
                     } else {
-                        bail!("unrecognized image \"{image}\" in bgspritemap \"{name}\"");
+                        bail!("unrecognized image \"{image}\" in bg atlas \"{name}\"");
                     }
                 }
             };
@@ -576,9 +576,9 @@ impl AssetProcessor {
             });
         }
 
-        self.bgspritemapdata.insert(
+        self.bgatlasdata.insert(
             name.clone(),
-            BgSpriteMapData {
+            BgAtlasData {
                 name,
                 sprites,
                 tilesets: tilesets.into_iter().collect(),
@@ -804,7 +804,7 @@ pub struct Assets {
     pub tilesets: Vec<TilesetData>,
     pub images: Vec<ImageData>,
     pub animations: Vec<AnimationData>,
-    pub bg_sprite_maps: Vec<BgSpriteMapData>,
+    pub bg_atlases: Vec<BgAtlasData>,
     pub masks: Vec<MaskData>,
     pub textures: Vec<TextureData>,
     pub fonts: Vec<FontData>,
@@ -873,7 +873,7 @@ impl FrameData {
     }
 }
 
-pub struct BgSpriteMapData {
+pub struct BgAtlasData {
     pub name: String,
     pub sprites: Vec<BgSpriteData>,
     pub tilesets: Vec<String>,

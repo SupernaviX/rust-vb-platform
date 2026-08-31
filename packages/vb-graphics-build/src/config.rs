@@ -101,8 +101,8 @@ struct RawAssetFile {
     pub masks: BTreeMap<String, RawMask>,
     #[serde(rename = "font", default)]
     pub fonts: BTreeMap<String, RawFont>,
-    #[serde(rename = "bgspritemap", default)]
-    pub bg_sprite_maps: BTreeMap<String, RawBgSpriteMap>,
+    #[serde(rename = "bgatlas", default)]
+    pub bg_atlases: BTreeMap<String, RawBgAtlas>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -152,7 +152,7 @@ struct RawSpriteData {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct RawBgSpriteMap {
+pub struct RawBgAtlas {
     pub base: Option<String>,
     #[serde(default)]
     pub bgmap_start: u8,
@@ -161,7 +161,7 @@ pub struct RawBgSpriteMap {
     #[serde(rename = "sprite", default)]
     pub sprites: BTreeMap<String, RawBgSprite>,
 }
-impl RawBgSpriteMap {
+impl RawBgAtlas {
     fn fix_files(self, opts: &mut Options, dir: &Path) -> Result<Self> {
         Ok(Self {
             spritesheets: self
@@ -197,7 +197,7 @@ pub enum RawBgSprite {
 pub struct RawAssets {
     pub animations: BTreeMap<String, RawAnimation>,
     pub images: BTreeMap<String, RawImage>,
-    pub bg_sprite_maps: BTreeMap<String, RawBgSpriteMap>,
+    pub bg_atlases: BTreeMap<String, RawBgAtlas>,
     pub masks: BTreeMap<String, RawMask>,
     pub fonts: BTreeMap<String, RawFont>,
 }
@@ -341,7 +341,7 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
     let mut assets = RawAssets {
         animations: BTreeMap::new(),
         images: BTreeMap::new(),
-        bg_sprite_maps: BTreeMap::new(),
+        bg_atlases: BTreeMap::new(),
         masks: BTreeMap::new(),
         fonts: BTreeMap::new(),
     };
@@ -394,23 +394,23 @@ pub fn parse(opts: &mut Options) -> Result<RawAssets> {
         for (name, mask) in file.masks {
             assets.masks.insert(name, mask.fix_files(opts, dir)?);
         }
-        for (name, bg_sprite_map) in file.bg_sprite_maps {
+        for (name, bg_atlas) in file.bg_atlases {
             assets
-                .bg_sprite_maps
-                .insert(name, bg_sprite_map.fix_files(opts, dir)?);
+                .bg_atlases
+                .insert(name, bg_atlas.fix_files(opts, dir)?);
         }
     }
-    for (name, bg_sprite_map) in &mut assets.bg_sprite_maps {
-        for spritesheet in &bg_sprite_map.spritesheets {
+    for (name, bg_atlas) in &mut assets.bg_atlases {
+        for spritesheet in &bg_atlas.spritesheets {
             let Some(sprites) = spritesheet_sprites.get(spritesheet) else {
                 bail!(
-                    "unrecognized spritesheet \"{}\" for bg sprite map \"{}\"",
+                    "unrecognized spritesheet \"{}\" for bg atlas \"{}\"",
                     spritesheet.display(),
                     name
                 );
             };
             for sprite in sprites {
-                bg_sprite_map.sprites.insert(
+                bg_atlas.sprites.insert(
                     sprite.clone(),
                     RawBgSprite::Image {
                         image: sprite.clone(),
