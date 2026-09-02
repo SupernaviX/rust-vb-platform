@@ -212,9 +212,8 @@ impl AssetProcessor {
 
     fn process_image(&mut self, name: String, image: RawImage) -> Result<()> {
         let tileset = image.tileset.clone();
-        let real_tileset = tileset.clone().unwrap_or(name.clone());
         let (width, height, frame) = self
-            .extract_image(image, real_tileset)
+            .extract_image(image)
             .context(format!("could not parse {name}"))?;
         self.imagedata.insert(
             name.clone(),
@@ -233,9 +232,8 @@ impl AssetProcessor {
         let mut frames = vec![];
         let mut size = None;
         for (index, image) in animation.images.into_iter().enumerate() {
-            let real_tileset = image.tileset.clone().unwrap_or(format!("{name}-{index}"));
             let (frame_width, frame_height, frame) = self
-                .extract_image(image, real_tileset)
+                .extract_image(image)
                 .context(format!("could not parse frame {index} of {name}"))?;
             size = size.or(Some((frame_width, frame_height)));
             if size != Some((frame_width, frame_height)) {
@@ -259,35 +257,52 @@ impl AssetProcessor {
         Ok(())
     }
 
-    fn extract_image(
-        &mut self,
-        image: RawImage,
-        tileset: String,
-    ) -> Result<(usize, usize, FrameData)> {
+    fn extract_image(&mut self, image: RawImage) -> Result<(usize, usize, FrameData)> {
+        let real_tileset = image.tileset.clone().unwrap_or("placeholder".to_string());
         match image.data {
             RawImageData::Mono(region) => {
                 let (width, height, cells) = self.extract_region(
-                    tileset,
+                    real_tileset.clone(),
                     image.palette,
                     region,
                     &ImageEffects::default(),
                     Eye::Mono,
                 )?;
-                Ok((width, height, FrameData::Mono(cells)))
+                let tiles = if image.tileset.is_none() {
+                    self.tilesetdata.remove(&real_tileset).map(|t| t.tiles)
+                } else {
+                    None
+                };
+                Ok((width, height, FrameData::Mono { cells, tiles }))
             }
             RawImageData::Stereo {
                 left,
                 right,
                 effects,
             } => {
-                let (width_l, height_l, left) =
-                    self.extract_region(tileset.clone(), image.palette, left, &effects, Eye::Left)?;
-                let (width_r, height_r, right) =
-                    self.extract_region(tileset, image.palette, right, &effects, Eye::Right)?;
+                let (width_l, height_l, left) = self.extract_region(
+                    real_tileset.clone(),
+                    image.palette,
+                    left,
+                    &effects,
+                    Eye::Left,
+                )?;
+                let (width_r, height_r, right) = self.extract_region(
+                    real_tileset.clone(),
+                    image.palette,
+                    right,
+                    &effects,
+                    Eye::Right,
+                )?;
                 if width_l != width_r || height_l != height_r {
                     bail!("left and right images must be same size");
                 }
-                Ok((width_l, height_l, FrameData::Stereo { left, right }))
+                let tiles = if image.tileset.is_none() {
+                    self.tilesetdata.remove(&real_tileset).map(|t| t.tiles)
+                } else {
+                    None
+                };
+                Ok((width_l, height_l, FrameData::Stereo { left, right, tiles }))
             }
         }
     }
@@ -854,14 +869,25 @@ pub enum Frames {
 }
 
 pub enum FrameData {
-    Mono(Vec<u16>),
-    Stereo { left: Vec<u16>, right: Vec<u16> },
+    Mono {
+        cells: Vec<u16>,
+        tiles: Option<Vec<[u16; 8]>>,
+    },
+    Stereo {
+        left: Vec<u16>,
+        right: Vec<u16>,
+        tiles: Option<Vec<[u16; 8]>>,
+    },
 }
 impl FrameData {
     pub fn size_bytes(&self) -> usize {
         match &self {
-            Self::Mono(f) => f.len() * 2,
-            Self::Stereo { left, right } => (left.len() + right.len()) * 2,
+            Self::Mono { cells, tiles } => {
+                cells.len() * 2 + tiles.as_ref().map_or_default(|v| v.len() * 16)
+            }
+            Self::Stereo { left, right, tiles } => {
+                (left.len() + right.len()) * 2 + tiles.as_ref().map_or_default(|v| v.len() * 16)
+            }
         }
     }
 }

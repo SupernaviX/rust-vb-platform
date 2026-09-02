@@ -4,7 +4,7 @@ use vb_rt::sys::vip;
 pub struct Image {
     pub width_cells: u8,
     pub height_cells: u8,
-    pub data: &'static [vip::Cell],
+    pub cells: &'static [vip::Cell],
 }
 
 impl Image {
@@ -49,7 +49,7 @@ impl StereoImage {
         Image {
             width_cells: self.width_cells,
             height_cells: self.height_cells,
-            data: self.left,
+            cells: self.left,
         }
     }
 
@@ -57,7 +57,45 @@ impl StereoImage {
         Image {
             width_cells: self.width_cells,
             height_cells: self.height_cells,
-            data: self.right,
+            cells: self.right,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct StandaloneImage {
+    pub tiles: &'static [vip::Character],
+    pub width_cells: u8,
+    pub height_cells: u8,
+    pub cells: &'static [vip::Cell],
+}
+
+impl StandaloneImage {
+    pub fn image(self) -> Image {
+        Image {
+            width_cells: self.width_cells,
+            height_cells: self.height_cells,
+            cells: self.cells,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct StandaloneStereoImage {
+    pub tiles: &'static [vip::Character],
+    pub width_cells: u8,
+    pub height_cells: u8,
+    pub left: &'static [vip::Cell],
+    pub right: &'static [vip::Cell],
+}
+
+impl StandaloneStereoImage {
+    pub fn image(self) -> StereoImage {
+        StereoImage {
+            width_cells: self.width_cells,
+            height_cells: self.height_cells,
+            left: self.left,
+            right: self.right,
         }
     }
 }
@@ -82,7 +120,7 @@ impl ImageRenderer<'_> {
         let width = self.cells.0 as usize;
         if width > 0 {
             for _ in 0..self.cells.1 {
-                let src_cells = &self.image.data[src_start..(src_start + width)];
+                let src_cells = &self.image.cells[src_start..(src_start + width)];
                 if self.offset == 0 {
                     vip::BG_CELLS.write_slice(src_cells, dst_start);
                 } else {
@@ -119,7 +157,7 @@ impl ImageRenderer<'_> {
                     break;
                 }
                 let cell =
-                    self.image.data[y as usize * self.image.width_cells as usize + x as usize];
+                    self.image.cells[y as usize * self.image.width_cells as usize + x as usize];
                 let character = cell.character();
                 if character == 0 {
                     continue;

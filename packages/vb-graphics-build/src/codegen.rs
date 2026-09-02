@@ -25,21 +25,7 @@ pub fn generate(opts: &mut Options, assets: Assets) -> Result<()> {
         "tilesets",
         assets.tilesets,
         |file, tileset| {
-            let tile_count = tileset.tiles.len();
-            let tileset_filename = format!("tilesets{MAIN_SEPARATOR}{}.bin", tileset.name);
-            let mut tileset_file = opts.output_file(&tileset_filename)?;
-            for word in tileset.tiles.into_flattened() {
-                tileset_file.write_all(&word.to_le_bytes())?;
-            }
-            tileset_file.flush()?;
-
-            writeln!(
-                file,
-                "    pub static {}: [vb_rt::sys::vip::Character; {}] = {};",
-                rust_identifier(&tileset.name),
-                tile_count,
-                include("tilesetdata", &tileset_filename),
-            )?;
+            generate_tileset(file, opts, true, &tileset.name, &tileset.tiles)?;
             Ok(())
         },
     )?;
@@ -57,9 +43,11 @@ pub fn generate(opts: &mut Options, assets: Assets) -> Result<()> {
                 (frames.as_slice(), true)
             }
         };
-        let (struct_name, stereo) = match frames[0] {
-            FrameData::Mono(_) => ("vb_graphics::Image", false),
-            FrameData::Stereo { .. } => ("vb_graphics::StereoImage", true),
+        let (struct_name, write_cells, stereo) = match frames[0] {
+            FrameData::Mono { tiles: None, .. } => ("vb_graphics::Image", false, false),
+            FrameData::Mono { .. } => ("vb_graphics::StandaloneImage", true, false),
+            FrameData::Stereo { tiles: None, .. } => ("vb_graphics::StereoImage", false, true),
+            FrameData::Stereo { .. } => ("vb_graphics::StandaloneStereoImage", true, true),
         };
         let (start_indent, end_indent) = if animation {
             writeln!(
@@ -85,6 +73,9 @@ pub fn generate(opts: &mut Options, assets: Assets) -> Result<()> {
                 rust_identifier(&image.name)
             };
             writeln!(file, "{start_indent}{struct_name} {{")?;
+            if write_cells {
+                writeln!(file, "{line_indent}tiles: &{cell_prefix}_TILES,")?;
+            }
             writeln!(
                 file,
                 "{line_indent}width_cells: {},",
@@ -99,7 +90,7 @@ pub fn generate(opts: &mut Options, assets: Assets) -> Result<()> {
                 writeln!(file, "{line_indent}left: &{cell_prefix}_L_CELLS,")?;
                 writeln!(file, "{line_indent}right: &{cell_prefix}_R_CELLS,")?;
             } else {
-                writeln!(file, "{line_indent}data: &{cell_prefix}_CELLS,")?;
+                writeln!(file, "{line_indent}cells: &{cell_prefix}_CELLS,")?;
             }
             if animation {
                 writeln!(file, "{end_indent}}},")?;
@@ -327,8 +318,17 @@ where
     T: Write,
 {
     match frame {
-        FrameData::Mono(cells) => generate_cells(file, opts, name, cells),
-        FrameData::Stereo { left, right } => {
+        FrameData::Mono { cells, tiles } => {
+            if let Some(tiles) = tiles {
+                generate_tileset(file, opts, false, &format!("{name}_tiles"), tiles)?;
+            }
+            generate_cells(file, opts, name, cells)?;
+            Ok(())
+        }
+        FrameData::Stereo { left, right, tiles } => {
+            if let Some(tiles) = tiles {
+                generate_tileset(file, opts, false, &format!("{name}_tiles"), tiles)?;
+            }
             generate_cells(file, opts, &format!("{name}_l"), left)?;
             generate_cells(file, opts, &format!("{name}_r"), right)?;
             Ok(())
@@ -354,6 +354,35 @@ where
         rust_identifier(name),
         cell_count,
         include("celldata", &celldata_filename),
+    )?;
+    Ok(())
+}
+
+fn generate_tileset<T>(
+    file: &mut T,
+    opts: &mut Options,
+    public: bool,
+    name: &str,
+    tiles: &[[u16; 8]],
+) -> Result<()>
+where
+    T: Write,
+{
+    let tile_count = tiles.len();
+    let tileset_filename = format!("tilesets{MAIN_SEPARATOR}{}.bin", name);
+    let mut tileset_file = opts.output_file(&tileset_filename)?;
+    for word in tiles.as_flattened() {
+        tileset_file.write_all(&word.to_le_bytes())?;
+    }
+    tileset_file.flush()?;
+
+    writeln!(
+        file,
+        "    {}static {}: [vb_rt::sys::vip::Character; {}] = {};",
+        if public { "pub " } else { "" },
+        rust_identifier(name),
+        tile_count,
+        include("tilesetdata", &tileset_filename),
     )?;
     Ok(())
 }

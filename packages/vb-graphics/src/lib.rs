@@ -6,7 +6,10 @@ pub mod text;
 
 use core::sync::atomic::AtomicBool;
 
-pub use assets::{BgAnimation, BgSprite, Font, FontCharacter, Image, Mask, StereoImage, Texture};
+pub use assets::{
+    BgAnimation, BgSprite, Font, FontCharacter, Image, Mask, StandaloneImage,
+    StandaloneStereoImage, StereoImage, Texture,
+};
 use vb_rt::sys::{halt, vip};
 
 const PALETTES: [vip::Palette; 4] = [
