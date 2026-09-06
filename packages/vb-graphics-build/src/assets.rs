@@ -101,6 +101,9 @@ impl AssetProcessor {
             if let Some(background) = effects.background.as_ref() {
                 effect_data.insert(background.clone());
             }
+            if let Some(foreground) = effects.foreground.as_ref() {
+                effect_data.insert(foreground.clone());
+            }
             if let Some(mask) = effects.mask.as_ref() {
                 effect_data.insert(mask.clone());
             }
@@ -321,6 +324,12 @@ impl AssetProcessor {
             .as_ref()
             .or(effects.background.as_ref())
             .cloned();
+        let foreground = region
+            .effects
+            .foreground
+            .as_ref()
+            .or(effects.foreground.as_ref())
+            .cloned();
         let mask = region
             .effects
             .mask
@@ -385,6 +394,27 @@ impl AssetProcessor {
                             if *pixel == rarest_shade {
                                 *pixel = Shade::Transparent;
                             }
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(foreground) = foreground {
+            let Some(fg) = self.effect_data.get(&foreground) else {
+                bail!("No image found with name \"{foreground}\"");
+            };
+            if fg.width != width || fg.height != height {
+                bail!(
+                    "foreground \"{foreground}\" ({}, {}) must be same size as image ({width}, {height})",
+                    fg.width,
+                    fg.height
+                );
+            }
+            for (cell, fg_cell) in shades.iter_mut().zip(fg.for_eye(eye)?) {
+                for (row, fg_row) in cell.iter_mut().zip(fg_cell) {
+                    for (pixel, fg_pixel) in row.iter_mut().zip(fg_row) {
+                        if *fg_pixel != Shade::Transparent {
+                            *pixel = *fg_pixel;
                         }
                     }
                 }

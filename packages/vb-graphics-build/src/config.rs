@@ -271,11 +271,12 @@ impl RawImageData {
 #[derive(Deserialize, Debug, Clone, Default)]
 pub struct ImageEffects {
     pub background: Option<String>,
+    pub foreground: Option<String>,
     pub mask: Option<String>,
 }
 impl ImageEffects {
     pub const fn is_empty(&self) -> bool {
-        self.background.is_none() && self.mask.is_none()
+        self.background.is_none() && self.foreground.is_none() && self.mask.is_none()
     }
 }
 
