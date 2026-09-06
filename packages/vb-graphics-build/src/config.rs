@@ -242,6 +242,7 @@ impl RawImage {
 
 #[derive(Deserialize, Debug)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
 pub enum RawImageData {
     Mono(RawImageRegion),
     Stereo {
