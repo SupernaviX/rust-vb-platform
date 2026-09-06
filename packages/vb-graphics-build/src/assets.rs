@@ -487,7 +487,7 @@ impl AssetProcessor {
         let mut tilesets = BTreeSet::new();
         let mut processed_sprites = vec![];
         let mut unplaced_regions = vec![];
-        for (name, sprite) in raw.sprites {
+        for (sprite_name, sprite) in raw.sprites {
             let (kind, image, stereo) = match sprite {
                 RawBgSprite::Region {
                     size,
@@ -583,19 +583,19 @@ impl AssetProcessor {
             match &kind {
                 BgSpriteKind::Image(data) => {
                     unplaced_regions.push(InputRegion {
-                        name: name.clone(),
+                        name: sprite_name.clone(),
                         width: data.width * if stereo { 2 } else { 1 },
                         height: data.height,
                     });
                 }
                 BgSpriteKind::Region(_) => {}
                 BgSpriteKind::Animation(data) => unplaced_regions.push(InputRegion {
-                    name: name.clone(),
+                    name: sprite_name.clone(),
                     width: data.frame_width * data.columns * if stereo { 2 } else { 1 },
                     height: data.frame_height * data.rows,
                 }),
             }
-            processed_sprites.push((name, kind, image, stereo));
+            processed_sprites.push((sprite_name, kind, image, stereo));
         }
 
         let mut sprites = vec![];
