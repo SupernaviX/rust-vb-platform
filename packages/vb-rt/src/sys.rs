@@ -1,5 +1,6 @@
 pub mod hardware;
 pub mod sram;
+mod util;
 pub mod vip;
 mod volatile;
 pub mod vsu;
