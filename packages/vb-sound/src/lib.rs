@@ -285,6 +285,7 @@ impl SubChannelState {
                 self.priority = priority;
                 self.waiting = 0;
                 self.paused = false;
+                self.shadowed.fill(0);
                 if !silent {
                     // SILENCE!!!
                     channel.interval().write(vsu::IntervalData::new());
