@@ -69,7 +69,11 @@ impl BeepBoxDecoder {
         let Some(channel) = self.song.channels.get(source as usize) else {
             bail!("Beepbox {} has no channel {source}", self.name);
         };
-        let base_volume = channel.instruments.first().map_or(100, |i| i.volume) as f64 / 100.0;
+        let base_volume = channel
+            .instruments
+            .first()
+            .map_or(140, |i| i.volume as i16 + 40) as f64
+            / 140.0;
         self.channels.entry(source).or_default().push(Channel {
             index,
             instrument,
@@ -288,7 +292,7 @@ enum BeepBoxChannelType {
 
 #[derive(Deserialize)]
 struct BeepBoxInstrument {
-    volume: u8,
+    volume: i8,
 }
 
 #[derive(Deserialize)]
