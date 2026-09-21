@@ -135,7 +135,7 @@ impl BeepBoxDecoder {
         }
 
         if song.loop_bars > 0 {
-            let end_index = ir.pattern_length - song.ticks_per_beat as u64;
+            let end_index = ir.pattern_length - 1;
             let end_effect = ControlEffect::Jump {
                 order: song.intro_bars,
                 tick: 0,
