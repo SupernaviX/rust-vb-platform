@@ -723,8 +723,7 @@ impl PitchCursor {
                 .as_ref()
                 .and_then(|s| s.target)
                 .unwrap_or_default();
-            let start = prev as f64 + old_value;
-            let target = note as f64 - start;
+            let target = note as f64 - prev as f64;
             let speed = if old_value < target { speed } else { -speed };
 
             self.slide_effect = Some(PitchSlide {
