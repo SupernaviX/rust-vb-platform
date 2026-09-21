@@ -107,12 +107,17 @@ impl BeepBoxDecoder {
                 ir.instruments.push(channel.instrument);
 
                 let mut patterns = BTreeMap::new();
-                patterns.insert(
+                let mut data = BTreeMap::new();
+                data.insert(
                     0,
-                    Pattern {
-                        data: BTreeMap::new(),
+                    PatternTick {
+                        note: Some(NoteEvent::Stop),
+                        instrument: None,
+                        volume: None,
+                        effects: vec![],
                     },
                 );
+                patterns.insert(0, Pattern { data });
                 for (index, raw) in raw_channel.patterns.iter().enumerate() {
                     let pattern = parse_pattern(&song, raw_channel.type_, raw, instrument);
                     patterns.insert(index + 1, pattern);
@@ -159,6 +164,15 @@ fn parse_pattern(
     let mut pattern = Pattern {
         data: BTreeMap::new(),
     };
+    pattern.data.insert(
+        0,
+        PatternTick {
+            note: Some(NoteEvent::Stop),
+            instrument: None,
+            volume: None,
+            effects: vec![],
+        },
+    );
     for note in &raw.notes {
         let pitch = match type_ {
             BeepBoxChannelType::Pitch => note.pitches[0] + song.key.to_pitch(),
