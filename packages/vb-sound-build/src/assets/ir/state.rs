@@ -3,7 +3,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::{
     assets::{
@@ -277,7 +277,9 @@ impl Channel {
     ) -> Result<()> {
         for (new_tick, update) in (self.next_tick..).zip(self.state.advance(tick - self.next_tick))
         {
-            update.apply(&mut self.player, waveforms)?;
+            update.apply(&mut self.player, waveforms).with_context(|| {
+                format!("could not play channel {} (tick {new_tick})", self.channel)
+            })?;
             self.player.advance_time(clock.moment(new_tick));
         }
         self.next_tick = tick;
@@ -398,7 +400,6 @@ impl ChannelUpdate {
         if let Some(envelope) = self.envelope {
             player.set_envelope(envelope);
         }
-        player.set_pitch_shift(self.pitch_shift);
         if let Some(waveform) = self.waveform {
             let index = waveforms.add_waveform(waveform)?;
             player.set_waveform(index);
@@ -408,13 +409,15 @@ impl ChannelUpdate {
         }
         match self.note_event {
             Some(NoteEvent::Start(key)) => {
-                player.start_note(key);
+                player.start_note(key, self.pitch_shift)?;
             }
             Some(NoteEvent::Stop) => {
-                player.stop_note();
+                player.stop_note()?;
+                player.set_pitch_shift(self.pitch_shift)?;
             }
-            Some(NoteEvent::Release) => {}
-            None => {}
+            Some(NoteEvent::Release) | None => {
+                player.set_pitch_shift(self.pitch_shift)?;
+            }
         }
         Ok(())
     }

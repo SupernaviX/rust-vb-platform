@@ -4,6 +4,8 @@ use std::{
     time::Duration,
 };
 
+use anyhow::{Result, bail};
+
 use crate::{assets::ChannelData, config::ChannelEffects};
 
 #[derive(Debug, Default)]
@@ -145,9 +147,9 @@ impl ChannelPlayer {
         }
     }
 
-    pub fn start_note(&mut self, mut key: u8) {
+    pub fn start_note(&mut self, mut key: u8, pitch_shift: f64) -> Result<()> {
         if self.note_started.is_some() {
-            self.stop_note();
+            self.stop_note()?;
         }
         if let Some(envelope) = self.last_envelope {
             self.set_envelope_u8(envelope);
@@ -155,20 +157,22 @@ impl ChannelPlayer {
         if self.noise {
             key = (key as u16 * 3 / 4) as u8;
         }
-        if self.last_key != Some(key) || self.stale_key {
-            let shift = self.effects.shift + self.pitch_shift;
+        if self.last_key != Some(key) || self.stale_key || self.pitch_shift != pitch_shift {
+            let shift = self.effects.shift + pitch_shift;
             let Some(frequency) = key_to_clocks(key, shift) else {
-                panic!("note {key} (with shift {shift}) is too low");
+                bail!("note {key} (with shift {shift}) is too low");
             };
             self.current_row().frequency = Some(frequency);
             self.last_key = Some(key);
+            self.pitch_shift = pitch_shift;
             self.stale_key = false;
         }
         self.current_row().note = Some(NoteEvent::Start(NoteStart { interval: None }));
         self.note_started = self.now;
+        Ok(())
     }
 
-    pub fn stop_note(&mut self) {
+    pub fn stop_note(&mut self) -> Result<()> {
         let started = self.note_started.take().unwrap_or(Moment::START);
         let interval_units = (self.now.unwrap_or(Moment::START) - started)
             .div_duration_f32(INTERVAL_UNIT)
@@ -179,7 +183,7 @@ impl ChannelPlayer {
                 .get_mut(&started)
                 .and_then(|s| s.note.as_mut())
             else {
-                panic!("invalid note_started");
+                bail!("invalid note_started");
             };
             note.interval = Some(interval_units - 1);
         } else {
@@ -187,19 +191,21 @@ impl ChannelPlayer {
             assert!(row.note.is_none());
             row.note = Some(NoteEvent::Stop);
         }
+        Ok(())
     }
 
-    pub fn set_pitch_shift(&mut self, shift: f64) {
+    pub fn set_pitch_shift(&mut self, shift: f64) -> Result<()> {
         if self.pitch_shift != shift {
             self.pitch_shift = shift;
             if let Some(key) = self.last_key {
                 let shift = self.effects.shift + self.pitch_shift;
                 let Some(frequency) = key_to_clocks(key, shift) else {
-                    panic!("note {key} (with shift {shift}) is too low");
+                    bail!("note {key} (with shift {shift}) is too low");
                 };
                 self.current_row().frequency = Some(frequency);
             }
         }
+        Ok(())
     }
 
     pub fn finish(self) -> Vec<VBEvent> {
@@ -329,7 +335,11 @@ fn key_to_pitch(key: u8, shift: f64) -> f64 {
 
 fn pitch_to_clocks(pitch: f64) -> Option<u16> {
     let freq = 2048.0 - (156_250.0 / pitch);
-    if freq > 0.0 { Some(freq as u16) } else { None }
+    if freq > 0.0 {
+        Some(freq.round() as u16)
+    } else {
+        None
+    }
 }
 
 fn key_to_clocks(key: u8, shift: f64) -> Option<u16> {
