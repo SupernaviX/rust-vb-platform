@@ -13,6 +13,21 @@ impl<const N: usize> core::ops::Deref for WaveformData<N> {
     }
 }
 
+#[repr(C, align(4))]
+pub struct ChannelData<const N: usize>([u16; N]);
+impl<const N: usize> ChannelData<N> {
+    pub const fn as_slice(&self) -> &[u16] {
+        self.0.as_slice()
+    }
+}
+impl<const N: usize> core::ops::Deref for ChannelData<N> {
+    type Target = [u16];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 #[macro_export]
 #[cfg(windows)]
 macro_rules! path_sep {

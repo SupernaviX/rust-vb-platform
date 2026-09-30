@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     ops::{Add, Sub},
     time::Duration,
 };
@@ -225,7 +225,7 @@ impl ChannelPlayer {
                         repeat: false,
                     });
                 }
-                let frames = frame - current_frame;
+                let frames = u16::try_from(frame - current_frame).expect("waited too long");
                 events.push(VBEvent::Wait { frames });
                 current_row = row;
                 current_frame = frame;
@@ -237,6 +237,7 @@ impl ChannelPlayer {
             .map(|n| n.last_frame() - current_frame)
             .unwrap_or_default();
         if frames > 0 {
+            let frames = u16::try_from(frames).expect("waited too long");
             events.push(VBEvent::Wait { frames });
         }
         events.push(VBEvent::Stop);
@@ -373,7 +374,7 @@ impl Sub for Moment {
 #[derive(Debug)]
 pub enum VBEvent {
     Wait {
-        frames: u32,
+        frames: u16,
     },
     SetWaveform {
         waveform: u8,
@@ -413,17 +414,18 @@ pub enum VBEvent {
 
 struct EventEncoder {
     bytes: Vec<u8>,
-    patterns: HashMap<u8, i32>,
+    patterns: BTreeMap<u8, usize>,
 }
 impl EventEncoder {
-    const WAIT: u8 = 0;
     const WRITE: u8 = 1;
-    const JUMP: u8 = 2;
+    const MARK: u16 = 0x0002;
+    const JUMP: u16 = 0x0102;
+    const DONE: u16 = 0x0000;
 
     pub fn new() -> Self {
         Self {
             bytes: vec![],
-            patterns: HashMap::new(),
+            patterns: BTreeMap::new(),
         }
     }
 
@@ -431,8 +433,7 @@ impl EventEncoder {
         match event {
             VBEvent::Wait { frames } => {
                 assert_ne!(frames, 0);
-                self.bytes.push(Self::WAIT);
-                self.encode_u24(frames);
+                self.encode_u16(frames.checked_shl(2).expect("wait too long"));
             }
             VBEvent::SetWaveform { waveform } => {
                 self.encode_write(0x18, waveform);
@@ -474,53 +475,42 @@ impl EventEncoder {
                 self.encode_write(0x00, int);
             }
             VBEvent::StartPattern { index } => {
-                self.patterns.insert(index, self.bytes.len() as i32 / 4);
+                self.patterns.insert(index, self.bytes.len());
             }
             VBEvent::GoToPattern { index } => {
                 let target = *self.patterns.get(&index).expect("unrecognized pattern");
-                let current = self.bytes.len() as i32 / 4;
-                self.bytes.push(Self::JUMP);
-                self.encode_i24(target - current);
+                self.insert_u16(target, Self::MARK);
+                self.encode_u16(Self::JUMP);
             }
             VBEvent::Stop => {
-                for _ in 0..4 {
-                    self.bytes.push(0);
-                }
+                self.encode_u16(Self::DONE);
             }
         }
     }
 
     pub fn finish(mut self) -> Vec<u8> {
-        for _ in 0..4 {
-            self.bytes.push(0);
+        if !self.bytes.ends_with(&Self::DONE.to_le_bytes()) {
+            self.encode_u16(Self::DONE);
+        }
+        while !self.bytes.len().is_multiple_of(4) {
+            self.encode_u16(Self::DONE);
         }
         self.bytes
     }
 
-    fn encode_u24(&mut self, value: u32) {
-        let bytes = value.to_le_bytes();
-        assert_eq!(bytes[3], 0);
-        for byte in &bytes[0..3] {
-            self.bytes.push(*byte);
+    fn insert_u16(&mut self, index: usize, value: u16) {
+        for (i, byte) in value.to_le_bytes().into_iter().enumerate() {
+            self.bytes.insert(index + i, byte);
         }
     }
 
-    fn encode_i24(&mut self, value: i32) {
-        let bytes = value.to_le_bytes();
-        if value.is_negative() {
-            assert_eq!(bytes[3], 255);
-        } else {
-            assert_eq!(bytes[3], 0);
-        }
-        for byte in &bytes[0..3] {
-            self.bytes.push(*byte);
-        }
+    fn encode_u16(&mut self, value: u16) {
+        self.bytes.extend_from_slice(&value.to_le_bytes());
     }
 
     fn encode_write(&mut self, offset: u8, value: u8) {
-        self.bytes.push(Self::WRITE);
-        self.bytes.push(0);
-        self.bytes.push(offset);
+        assert!(offset.is_multiple_of(4));
+        self.bytes.push(offset | Self::WRITE);
         self.bytes.push(value);
     }
 }

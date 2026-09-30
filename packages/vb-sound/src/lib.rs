@@ -11,7 +11,7 @@ use core::{
     sync::atomic::{AtomicBool, AtomicPtr, Ordering::Relaxed},
 };
 
-pub use assets::WaveformData;
+pub use assets::{ChannelData, WaveformData};
 use vb_rt::sys::{VolatilePointer, vsu};
 
 pub static WAVEFORMS: WaveformControl = WaveformControl(AtomicPtr::new(core::ptr::null_mut()));
@@ -25,38 +25,38 @@ impl WaveformControl {
 }
 
 enum Command {
-    Play(*mut u32, Priority),
+    Play(*mut u16, Priority),
     Pause,
     Resume,
 }
 
-struct Controller(AtomicPtr<u32>);
+struct Controller(AtomicPtr<u16>);
 impl Controller {
     pub const fn new() -> Self {
         Self(AtomicPtr::new(core::ptr::null_mut()))
     }
 
-    pub fn play(&self, data: &[u32], priority: Priority) {
+    pub fn play(&self, data: &[u16], priority: Priority) {
         let flags = ((priority as u8) as usize) << 28 | 0x00000001;
         let value = data.as_ptr().map_addr(|a| a | flags).cast_mut();
         self.store(value);
     }
 
     pub fn stop(&self) {
-        self.store(0x00000001 as *mut u32);
+        self.store(0x00000001 as *mut u16);
     }
 
     pub fn pause(&self) {
-        self.store(0x00000002 as *mut u32);
+        self.store(0x00000002 as *mut u16);
     }
 
     pub fn resume(&self) {
-        self.store(0x00000003 as *mut u32);
+        self.store(0x00000003 as *mut u16);
     }
 
     pub fn set_status(&self, priority: Option<Priority>) {
         let status = match priority {
-            Some(p) => (((p as u8) as u32) << 28 | 0x08000000) as *mut u32,
+            Some(p) => (((p as u8) as u32) << 28 | 0x08000000) as *mut u16,
             None => core::ptr::null_mut(),
         };
         self.store(status);
@@ -89,11 +89,11 @@ impl Controller {
         }
     }
 
-    fn load(&self) -> *mut u32 {
+    fn load(&self) -> *mut u16 {
         self.0.load(Relaxed)
     }
 
-    fn store(&self, value: *mut u32) {
+    fn store(&self, value: *mut u16) {
         self.0.store(value, Relaxed);
     }
 }
@@ -135,15 +135,15 @@ impl SoundChannel {
         }
     }
 
-    pub fn play(&self, data: &[u32]) {
+    pub fn play(&self, data: &[u16]) {
         self.base.play(data, Priority::Normal);
     }
 
-    pub fn play_overlay(&self, data: &[u32]) -> bool {
+    pub fn play_overlay(&self, data: &[u16]) -> bool {
         self.play_overlay_priority(data, Priority::Normal)
     }
 
-    pub fn play_overlay_priority(&self, data: &[u32], priority: Priority) -> bool {
+    pub fn play_overlay_priority(&self, data: &[u16], priority: Priority) -> bool {
         if self.overlay.priority().is_none_or(|p| p < priority) {
             self.overlay.play(data, priority);
             true
@@ -254,7 +254,8 @@ impl ChannelState {
 
 #[derive(Debug)]
 struct SubChannelState {
-    playing: *const u32,
+    playing: *const u16,
+    jump_to: *const u16,
     priority: Priority,
     waiting: u32,
     paused: bool,
@@ -265,6 +266,7 @@ impl SubChannelState {
     const fn new() -> Self {
         Self {
             playing: core::ptr::null(),
+            jump_to: core::ptr::null(),
             priority: Priority::Low,
             waiting: 0,
             paused: false,
@@ -282,6 +284,7 @@ impl SubChannelState {
             Command::Play(playing, priority) => {
                 // start playing
                 self.playing = playing;
+                self.jump_to = playing;
                 self.priority = priority;
                 self.waiting = 0;
                 self.paused = false;
@@ -354,8 +357,12 @@ impl SubChannelState {
                     // track old values in case we pause or get overridden
                     self.shadowed[offset as usize >> 2] = value;
                 }
-                ChannelEvent::Jump { offset } => {
-                    self.playing = unsafe { self.playing.offset(offset) };
+                ChannelEvent::Mark => {
+                    self.playing = unsafe { self.playing.offset(1) };
+                    self.jump_to = self.playing;
+                }
+                ChannelEvent::Jump => {
+                    self.playing = self.jump_to;
                 }
             }
         }
@@ -367,14 +374,15 @@ enum ChannelEvent {
     Done,
     Wait { frames: u32 },
     Write { offset: u8, value: u8 },
-    Jump { offset: isize },
+    Mark,
+    Jump,
 }
 impl ChannelEvent {
-    fn decode(value: u32) -> Self {
-        let [b0, b1, b2, b3] = value.to_le_bytes();
-        match b0 {
+    fn decode(value: u16) -> Self {
+        let [b0, b1] = value.to_le_bytes();
+        match b0 & 0x03 {
             0 => {
-                let frames = u32::from_le_bytes([b1, b2, b3, 0]);
+                let frames = (u16::from_le_bytes([b0, b1]) >> 2) as u32;
                 if frames > 0 {
                     Self::Wait { frames: frames - 1 }
                 } else {
@@ -382,14 +390,14 @@ impl ChannelEvent {
                 }
             }
             1 => Self::Write {
-                offset: b2,
-                value: b3,
+                offset: b0 & 0xfc,
+                value: b1,
             },
             2 => {
-                let high_byte = if b3 >= 128 { 255 } else { 0 };
-                let offset = i32::from_le_bytes([b1, b2, b3, high_byte]);
-                Self::Jump {
-                    offset: offset as isize,
+                if b1 == 0 {
+                    Self::Mark
+                } else {
+                    Self::Jump
                 }
             }
             _ => Self::Done,

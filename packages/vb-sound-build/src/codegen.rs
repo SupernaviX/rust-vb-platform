@@ -53,9 +53,9 @@ pub fn generate(opts: &mut Options, assets: Assets) -> Result<()> {
 
             writeln!(
                 file,
-                "    pub static {}: [u32; {}] = {};",
+                "    pub static {}: vb_sound::ChannelData<{}> = {};",
                 rust_identifier(&channel.name),
-                channel.data.len() / 4,
+                channel.data.len() / 2,
                 include("channel", &channel_filename),
             )?;
 
